@@ -1,0 +1,2262 @@
+%
+% Name: Computer Graphics Module Book
+% Author: Donald Whyte (sc10dw@leeds.ac.uk)
+%
+
+\documentclass{article}
+
+\usepackage[margin=2cm]{geometry} % easy page formatting
+	\geometry{letterpaper}
+\usepackage{doc} %special logo commands
+\usepackage{url} % formatting URLs
+\usepackage{datetime} % up-to-date, automatically generated times
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage{listings}
+% For graphic files
+\usepackage{graphicx}
+\usepackage{epstopdf}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\DeclareGraphicsRule{.tif}{png}{.png}{`convert #1 `dirname #1`/`basename #1 .tif`.png}
+
+% Set the title, author, and date.
+\title{Computer Graphics \\ COMP3750 -- CR31}
+\author{Donald Whyte}
+\date{\today}
+
+% The document proper.
+\begin{document}
+
+% Add the title section.
+\maketitle
+
+% Add various lists on new pages.
+\tableofcontents
+
+\pagebreak
+\listoffigures
+
+\pagebreak
+\listoftables
+
+% Start the paper on a new page.
+\pagebreak
+
+\section{Rendering}
+
+Rendering is the process of generating an artificial image from a defined scene. Typically these scenes are meant to model scenes based on real-life, so the desire for the rendered image to look realistic is high. So how does vision work in real life? Light enters the eye, which is then processed by the brain to interpret what the person should be seeing.
+
+What is light? Light is a collection of \textbf{photons}, emitted from a source. They follow the laws of Newtonian mechanics and travel extremely fast. Figure \ref{fig:light-travelling} shows how light photons travel from a source, \textbf{bouncing} off an object and hitting the human eye. This behaviour can be modelled computationally with \textbf{rays}.
+
+TODO: figure of light hitting
+
+Atoms \textbf{emit} photons to lose energy, the wavelength (colour) of the photons/light depends on which atom it is. This is known as \textbf{emission}.
+
+When a photon strikes a surface, it \textbf{bounces} and starts moving in a different direction. This is known as reflection, and is shown in Figure \ref{fig:reflection}. Note that a \textbf{surface normal} is a direction that is \textbf{perpendicular} to the surface. With \textbf{entirely smooth} surfaces, the angle of incidence (angle of incoming light ray to surface normal) is the same as the angle of reflection (angle of reflection ray to surface normal). This is known as \textbf{perfect reflection}. However, few surfaces are entirely smooth. Therefore, the angle of reflection is somewhat \textbf{random}. Modelling this concept is discussed in greater detail in Section \ref{sec:monte-carlo-integration}.
+
+Atoms not only emit photons, but they can \textbf{absorb} them. This happens when the energy from the photon transfers to the atom itself. This is the basis of vision (eyes absorb), photosynthesis (plant leaves absorb) and warmth (body absorbs). In other words, when we're modelling such a process we are \textbf{measuring where the photons come from, where they go and where they stop}.
+
+How exactly do we fake reality, and make the eye think something us there and when it's not? We apply mathematics to the world.
+
+\subsection{Alberti's Window}
+\label{sec:albertis-window}
+
+\textbf{Alberti's Window} is a way of \textbf{capturing}, or tracing, what the human eye captures. To capture what the human sees, you can:
+\begin{enumerate}
+	\item place a glass sheet in front of the eye (like tracing paper)
+	\item draw what you see on the glass sheet (rendering)
+	\item take the sheet with you (the rendered image)
+\end{enumerate}
+This is illustrated in Figure \ref{fig:albertis-window}. TODO: aLberti's window figure
+
+With this model, all rendering boils down to is determine what's on the other side of each \textbf{"grid point"} on the sheet. Notice how using such a method \textbf{discretises} the continuous light that the human eye sees. This discrete, gridded represented is essentially                                               a \textbf{computer image}, where the grid squares are \textbf{pixels}.
+
+\subsection{Synthetic Camera}
+
+To render a physical work and capture an image of it, we need to have some way of modelling the \textbf{camera}. That is, \textbf{where} the person in the virtual world and which \textbf{direction} are they looking at? Figure \ref{fig:synthetic-camera} illustrates the process of generating an image of a virtual world using a \textbf{synthetic camera}.
+
+Figure \ref{fig:synthetic-camera-process} shows a series of \textbf{scene transformations} to produce the desired image. It performs the following transformations:
+\begin{enumerate}
+	\item \textbf{View Transformation} -- use geometry to place camera. Transforms world in order to place the \textbf{camera} in the correct part of it (camera is origin, rest of world is moved to make this so)
+	\item \textbf{Model Transformation} -- use geometry to place models. Transforms individual objects to get them in the correct part of the world
+	\item \textbf{Projection Transformation} -- use project to describe camera. Determines \textbf{shape} and \textbf{size} of the viewing volume (i.e. how much the camera can see)
+	\item \textbf{Viewport Transformation} -- use projection to describe screen. Describes how the projected, transformed 3D scene is \textbf{mapped/collapsed} into a 2D image
+\end{enumerate}
+
+TODO: figure of synthetic camera
+TODO: figure of synthetic camera transformation steps
+
+\section{Projective Rendering}
+
+Raytracing computes one pixel at as time. Instead, \textbf{projecting rendering} computes multiple pixels. Each \textbf{triangle} is projected to the 2D image plane, at which point the triangles are drawn . Since triangles always project to triangles (except for the very rare case of lines), the \textbf{triangle-drawing code can be reused}.
+
+\subsection{Depth Buffer}
+
+If we draw objects \textbf{back to front}, then the back objects will be occluded by the objects in the front. This is desired, as it models how depth and occlusion work. \textbf{Painter's algorithm} is one approach to rendering the 2D image suc that depth is preserved. It:
+\begin{enumerate}
+	\item \textbf{sorts} all triangles from furthest away to closest
+	\item \textbf{renders} each triangle in the sorted order 
+\end{enumerate}
+Note that sorting is a $O(n \log n)$ operator. If you have millions of triangles which are being rendered every 1/60th of a second, then this is \textbf{incredibly slow}. In the worst case, you may have three triangles which \textbf{overlap each other}. Consider Figure \ref{fig:painters-alg-worst-case} -- red overlaps green, green overlaps blue and blue overlaps red. This \textbf{cyclic ordering} causes Painter's algorithm to fail.
+
+The solution to this is \textbf{depth buffering}. It works like this:
+\begin{enumerate}
+	\item For each pixel, set $Z = -\infty$. 
+	\item For each triangle $t$@
+	\begin{enumerate}
+		\item Transform triangle $t$ to image coordinates\\
+		\item \textbf{Rasterise} to \textbf{fragments}
+		\item For each fragment  at $(x, y, z$) with colour $(r, g, b)$:
+		\begin{enumerate}
+			\item If $depth(x, y) < Z$, \textbf{discard}
+			\item Else $depth(x, y) \geq Z$, set $colour(x, y) = (r, g, b)$
+		\end{enumerate}
+	\end{enumerate}
+\end{enumerate}
+That is, each pixel of the final image has a \textbf{depth (z)} value associated with it, which is the \textbf{depth of the object} whose colour currently resides at that pixel. If another object is rasterised and it has a fragment whose position is already taken by another fragment, the new object's fragment only overwrites the old object's \textbf{if the new fragment's depth value} is higher.
+
+\textbf{Lower depth values} mean that the object is \textbf{further} away from the viewpoint, meaning the $z$-axis is point \textbf{out} of the screen, towards the user.
+
+\paragraph{\textbf{NOTE: }} A \textbf{fragment} is a possible pixel. It hasn't been selected to be a pixel in the final rendered image yet, but it's a candidate.
+
+\subsection{Coordinate Systems}
+
+Given individual triangles which represent different objects in the scene, we to get the coordinates of those triangles to the image plane. This is done by \textbf{converting bases} using \textbf{homogeneous matrices}. These bases are typically \textbf{orthonormal}. Projecting rendering uses \textbf{six standard systems}:
+\begin{enumerate}
+	\item \textbf{Object Coordinate System (OCS)} -- local coordinate system for individual object
+	\item \textbf{World Coordinate System (WCS)} -- global coordinate system used by all objects in scene
+	\item \textbf{View Coordinate System (VCS)} -- coordinate system relative to \textbf{camera}, where the origin is typically camera's \textbf{position}
+	\item \textbf{Clipping Coordinate System (CCS)} -- coordinate system after applying \textbf{projection matrices}
+	\item \textbf{Normalised Device Coordinate System (NDCS)} -- used to convert homogeneous CCS back to 3D Cartesian coordinates. This is done using Equation \ref{eq:ndcs}. Notice how the $z$ value is \textbf{not normalised} -- this is because we need this for the depth buffer later (DCD). Independent of \textbf{screen coordinates}, meaning coordinates are in the range $[0,1] \times [0,1] \times [0,1]$.
+	\item \textbf{Device Coordinate System (DCD)} -- used for the final render to screen. These are expressed in \textbf{pixel coordinates}, being an $(x, y)$ position on the image plane. $z$ is the \textbf{distance} in front of the image place, which is the value that's used for the depth buffer (normalised from $[0,1]$ to $[0,255]$ or $[0,65536]$ (8-bit or 16-bit depth buffer)
+\end{enumerate}
+Figure \ref{fig:projective-rendering} shows the process of transforming object coordinates to device coordinates, going from a local representation to a representation that can be rendered on a 2D image plane. This is all done using homogeneous transformation matrices.
+
+TODO: figure of six systems and conversion (arrow from VCS to CCS)
+
+Figure \ref{fig:clipping-coordinates} shows what the clipping coordinates are. They're the (non-normalised) coordinates of an object on the image plane, with the $z$ value being the distance from the eye. The \textbf{projection matrix} essentially defines a \textbf{view frustum} (Figure \ref{fig:view-frustum}) that is used to definer what the user can and can't see. Any points \textbf{outside} of the frustum are not rendered, being clipped from the scene (hence the name for CCS).
+
+TODO: clipping coords figure
+
+TODO: view frustum figure (for perspective projection truncated pyramid. it's a box for orthogonal)
+
+\subsection{Pipeline}
+
+TODO: figure of projective pipeline
+
+Figure \ref{fig:projective-pipeline} shows the \textbf{projective rendering pipeline}. This pipeline has \textbf{four core stages}:
+\begin{enumerate}
+	\item \textbf{Geometry Input} -- where \textit{state} of the geometry is set, such as lights, materials, normals, bound texture. Afterwards, the geometry itself (vertices) is sent down the pipeline (after each \texttt{glVertex()} call for example).
+	\item \textbf{Geometry Computation} -- transforms given vertices from object coordinates  to image/device coordinates (see Figure \ref{fig:projective-rendering}). After this \textbf{lighting at each vertex is computed}.
+	\item \textbf{Rasterisation} -- rasterises geometry (triangles) to pixels, using computed shading of pixel and Barycentric interpolation
+	\item \textbf{Fragment Processing} -- looks up geometry's texture and \textbf{modulates} texel with shading (performing texture interpolation/filtering). After that, the \textbf{depth buffer} and other tests are performed to see if the fragment should be added to the image
+	\item \textbf{Add Fragment to Framebuffer Pixel} -- If fragment has passed the depth test (and other tests) it is added to the final image (in the framebuffer)
+\end{enumerate}
+Alongside the first three stages, there is processing running in parallel called \textbf{Texture Input}. This is where textures are defined with images and loaded into VRAM (on the video card). The cached texture images are used at the \textbf{Fragment Processing} stage. 
+
+\textbf{OpenGL} roughly follows this model for its own pipeline. This is discussed in more detail in Section \ref{sec:opengl-pipeline}.
+
+\section{Raytracing}
+
+\textbf{Raytracing} is a technique for generating an image by tracing the path of light (a \textbf{ray}) through pixels in an image plane and simulating the effects of its encounters with virtual objects. The technique is capable of producing a very high degree of visual realism, usually higher than that of real-time projective rendering, but at a greater computational cost.
+
+A \textbf{ray} is a straight line which starts a point called the \textbf{origin} and extends endlessly in a single \textbf{direction}. Most raytracing algorithms represent rays \textbf{parametrically}, like so:
+\begin{equation}
+	r = o + t\vec{d}
+	\label{eq:parametric-ray}
+\end{equation}
+where $o$ is the origin and $\vec{d}$ is the direction of the ray. The parameter $t$ can be any real value.
+
+The basic idea of raytracing is:
+\begin{enumerate}
+	\item For each pixel $(x, y)$ where $x \in [0, imageWidth], y \in [0, imageHeight]$
+	\begin{enumerate}
+		\item Create a ray from $e$ which shoots through the pixel $(x, y)$ on the \textbf{image plane}
+		\item Trace where the ray hits in the scene after it passes through the pixel
+		\item Compute the colour of the object the ray hits and \textbf{assign that colour to the pixel}
+	\end{enumerate}
+\end{enumerate}
+
+% http://en.wikipedia.org/wiki/File:Ray_trace_diagram.svg
+TODO: in-place picture of raytracing illustration from slides
+
+Like projective rendering, we still need a way of projecting a 3D scene onto a 2D image plane. To simplify, we assume that the image place's \textbf{distance from the eye} $d = 1$ in the $z$-direction. This means the image place can be represented parametrically like so:
+\begin{equation}
+\begin{aligned}[b]
+	\Pi_{im} &= p + s\vec{u} + t\vec{t} \\
+	&= \left[ \begin{matrix} 0 \\ 0 \\ -1 \end{matrix} \right]
+	+ s \left[ \begin{matrix} 1 \\ 0 \\ 0 \end{matrix} \right]
+	+ t \left[ \begin{matrix} 0 \\ 1 \\ 0 \end{matrix} \right]
+	\label{eq:parametric-raytracing-image-plane}
+\end{aligned}
+\end{equation}
+
+\paragraph{\textbf{NOTE: }} Unlike projective rendering, raytracing pretty much always works in \textbf{world coordinates}.
+\paragraph{}
+
+So where does the image that the eye can see lie on the image place? How wide is it (field of view) and what shape is it (aspect ratio)? How large is the output image -- how many pixels wide and tall?
+
+The \textbf{field of view} if the region that is visible in the image. This alters the projection of the image into the world, and is measured as an \textbf{angle} in the $x$ or $y$ directions. Figure \ref{fig:raytracing-fov} illustrates the field of view extending outwards, like a cone extending outward from the eye). It also shows that, given the $x-$angle $\theta$, the \textbf{width} of the image plane that the eye can actually see is:
+\begin{equation}
+	2 d \tan \theta \;\;\;\;\; \text{because }\frac{w}{2} = d \tan \theta
+\end{equation}
+
+By our assumption, let's say $d = 1$. Suppose $\theta = 45$ degrees and the \textbf{width of the output image} $n_w = 640$. Then we can compute the width of the image in the image plane $w$ \textit{and} the \textbf{width of a single pixel} $w_p$ is in the scene, like so:
+\begin{equation}
+	w = 2 d \tan \theta = 2 \cdot 1 \tan 45 = 2 \cdot 1 \cdot 1 = 2 \\
+	w_p = \frac{w}{n_w} = \frac{2}{640} = 0.003125
+\end{equation}
+
+The \textbf{aspect ratio} is the ratio of the image's \textbf{height to width}. For raytracing, this doesn't matter much, but we will assume square pixels. Therefore, the height of pixel is $h_p = w_p = \frac{w}{n_w}$. Therefore, as Figure \ref{eq:raytracing-pixel-location} shows, the \textbf{top left pixel} is at:
+\begin{equation}
+	\begin{aligned}[b]
+	p = \left[ \begin{matrix}
+		w_p\left( \frac{-n_w}{2} + \frac{1}{2} \right) \\
+		h_p\left( \frac{-n_h}{2} + \frac{1}{2} \right)
+	\end{matrix}\right]
+	= \left[ \begin{matrix}
+		w_p\left( \frac{1 - n_w}{2} \right) \\
+		h_p\left( \frac{1 - n_h}{2} \right)
+	\end{matrix}\right]
+	\end{aligned}
+\end{equation}
+Therefore, to get the location in \textbf{world coordinates} of the pixel $(i,j)$ on the image plane to send a ray through, we can use the following equation:
+\begin{equation}
+	\begin{aligned}[b]
+	p'= \left[ \begin{matrix}
+		p_x + i w_p \vec{x} \\
+		p_y + j h_p \vec{y}
+	\end{matrix}\right]
+	\end{aligned}
+	\label{eq:pixel-centre-raytracing}
+\end{equation}
+where $p$ is the top-left pixel of the image and $\vec{x},\vec{y}$ are the vectors going in the direction of the image's $x$ and $y$ direction's respectively (see Figure \ref{fig:pixel-grid}).
+
+TODO: figure of pixel grid with height annotated on as well ALSO PUT X AND Y VECTORS ON SIDES!
+
+When a ray hits an object, it might bounce off the object and hit another, and another, and so on. An easy way to write a raytracer like this is make it \textbf{recursive}. You have a single, top-level \texttt{raytrace()} call for each pixel and then any time another ray needs to be constructed, you make another, recursive call to \texttt{raytrace()}. These calls will unwind and the resultant colours of each ray will be combined to make the trace.
+
+Consider Figure \ref{fig:backward-colour-trace}. One ray was shot from the eye, which hit the green sphere. The ray bounces off the sphere, creating a new ray and \texttt{raytrace()} call recursively. this ray hits the square, which bounces off that and hits the red sphere. The ray from the sphere then hits the white light. At this point, we \textbf{trace backwards} to the red sphere, compute the colour reflected from this sphere (red), trace back to the square, then to the green sphere until the final colour traced back to the eye is \textbf{cyan} (red + blue + green).
+
+This is known as \textbf{global illumination}. We fire rays from the eye and keep tracing every single bounce until a light source is reached. At that point, we trace the ray back to the origin (the eye), contributing the contributions of the light and surface colours (what colours the surfaces reflect) for \textbf{each object the rays hit}, until the final colour is computed.
+
+% http://www-cs-faculty.stanford.edu/~eroberts/courses/soco/projects/1997-98/ray-tracing/images/color_calculation.gif
+TODO: figure of backward colour trace
+
+The skeleton for a recursive raytracer is:
+\begin{algorithmic}[1]
+	\STATE finalColour = backgroundColour
+	
+	\STATE \textit{// Ray-object intersection tests}
+	\STATE intersectionDistance = $-\infty$
+	\STATE intersectedObject = \texttt{null}
+	\FOR {each object in scene}
+		\STATE distance = intersect(ray, object)
+		\IF {distance $<$ intersectionDistance}
+			\STATE intersectionDistance = distance
+			\STATE intersectedObject = object
+		\ENDIF
+	\ENDFOR 
+	\IF {intersectedObject == NULL}
+		\RETURN finalColour
+	\ENDIF
+	\STATE 
+	
+	\STATE \textit{// Local illumination}	
+	\FOR {each light}
+		\STATE shadowed = \texttt{false}
+		\FOR {each object in scene}
+			\STATE lightRay = ray from object in direction of light
+			\IF {intersect(lightRay, object)}
+				\STATE shadowed = \texttt{true}
+			\ENDIF
+		\ENDFOR
+		\IF {NOT shadowed}
+			\STATE \textit{// Phong Lighting Model may be used here}
+			\STATE finalColour += localIllumination(ray, object)
+		\ENDIF
+	\ENDFOR
+	\STATE 	
+	
+	\STATE \textit{// Global illumination}
+	\STATE reflectionRay = compute reflection ray based on point of intersection on object
+	\STATE refractionRay = compute refraction ray based on point of intersection on object
+	\STATE finalColour += trace(reflectionRay)
+	\STATE finalColour += trace(refractionRay)
+	\STATE 	
+	
+	\RETURN finalColour
+\end{algorithmic}
+
+\textbf{Ray Types}:
+\begin{itemize}
+	\item \textbf{Reflection} -- a ray which represents how light \textbf{reflects} off the surface
+	\item \textbf{Refraction} -- a ray which represents how light \textbf{refracts} off, in \textbf{inside} the surface
+	\item \textbf{Light (not an actual ray usually)} -- a ray which goes from light to point of intersection to compute local illumination
+	\item \textbf{Shadow} -- a ray which goes from some object to a light source, to check if that object \textbf{occludes the light coming from that source} for another object (point of intersection). Augments local illumination
+\end{itemize}
+
+We could just use \textbf{local illumination} by tracing a ray from the hit object to the light source, computing the four \textbf{Phong lighting parameters} (shown in pseudo-code). However, this is \textbf{no better than we had before}. We can take advantage of this new rendering method by generating reflection and refraction rays and computing where they lead recursively (i.e. global illumination). Additionally, you can have a combination of both. Global illumination can be modelled more accurately using Monte Carlo integration, which is discussed in more detail in a later section.
+
+\subsection{Ray Intersections}
+
+Typically, a scene has \textbf{many} objects, whose positions vary from frame to frame. This means we need \textbf{efficient} geometric intersection tests. In particular, we need to focus on:
+\begin{itemize}
+	\item point-sphere (does a point lie in a sphere?)
+	\item point-triangle (does a point lie in a triangle?)
+	\item ray-sphere or line-sphere
+	\item ray-triangle or line-triangle
+\end{itemize}
+These intersection tests have to be performed for every pixel. See Section \ref{sec:intersection-tests} to see how to perform these.
+
+\subsection{Monte Carlo Integration}
+
+Global illumination is aware that \textbf{light must come from somewhere}. So we compute the reflection angle when a ray hits the surface and traces the light back further with another ray. This is repeated until you hit a light source. However, we need to add the contributions of \textbf{many photons}, reflected from many other objects and light sources. This means instead of just firing off a \textbf{single} reflection ray when our ray hits a surface, we fire off \textbf{many rays}.
+
+When using this model, if another rays are generated and the algorithm goes deep with the recursion, you don't need \textbf{local illumination} to achieve decent lighting in the scene. It can be purely achieved with global illumination, which is much more realistic!
+
+\textbf{Monte Carlo integration} is a technique which does just this:
+\begin{enumerate}
+	\item Compute an \textbf{inverse distribution of rays}
+	\item Find how much light came from each (recursively)
+	\item Compute each ray's interaction with the surface (e.g. materials, how much of each colour each object reflects)
+	\item Add the contributions together (\textbf{integrate})
+\end{enumerate}
+The process of producing multiple rays using a random distribution of rays from the point of intersection is shown in Figure \ref{fig:monte-carlo-integration}.
+
+So we trace many rays through the image plane, with each one potentially hitting a surface, we then trace more rays for a each, and then more rays from those his and so on. This means we have an \textbf{enormous} number of rays and thus, a lot of computation to perform.
+
+TODO: create rough figure on LucidChart which is based on the one on my slides of having multiple rays emergy from surfaces and stuff
+
+\subsection{Monte Carlo Distribution}
+
+So how do we compute the multiple rays which bounce off a single intersection? This uses \textbf{random distributions} of numbers. This means we need a way of generating random floating point numbers! Computers \textbf{pseudo-random number generators}, which aren't actually random but their distributions are similar to what people have empirically found that humans deem as random.
+
+\texttt{random()} is a function which generates a number from $[0, RAND\_MAX]$. To get a random number between [0,1], we do the following: $\frac{\texttt{random()}}{\texttt{RAND\_MAX}}$. Then we are free to scale and translate the number to get the random distribution to be in the range/scale we want.
+
+Figure \ref{fig:square-random-point-distribution} shows the distribution of points randomly generated to be within a square. This shows not all directions are equally likely -- \textbf{diagonals} are more likely! We want to be able to generate \textbf{random directions} to fire off a distribution of rays of Monte Carlo integration. This means we want a \textbf{circular distribution} of ray directions, in which \textbf{all directions are equally probable}, as shown in Figure \ref{fig:circular-distribution}.
+
+TODO: square random point with dir bias
+TODO: CIRCULAR DISTRIBUTION FIGURE
+
+The \textbf{Monte Carlo Method} can be used to compute random 3D directions, such that all directions are equally probability. It generates points in a square, but then \textbf{discards} points that are outside the circle \textbf{bounded by the square}. We only ever choose points inside the circle, which means we get a fair distribution of angles! 
+
+TODO: in-place monte carlo distribution random circle square figure
+
+The pseudo-code for doing this is given below:
+\begin{algorithmic}[1]
+	\WHILE {\texttt{true}}
+		\STATE \textit{// Randomise x, y, z}
+		\STATE $v = (0, 0, 0)$
+		\STATE $v.x$ = randomRange(-1, 1);
+		\STATE $v.y$ = randomRange(-1, 1);
+		\STATE $v.z$ = randomRange(-1, 1);
+		\STATE \textit{// If length is good, return unit vector to just get direction"}
+		\IF {($||v|| >= 0.1 \land ||v|| <= 1.0 $)}
+			\RETURN $\frac{v}{||v||}		$
+		\ENDIF
+	\ENDWHILE
+	\STATE \textit{// Should never get called}
+	\RETURN $(0, 0, 0)$
+\end{algorithmic}
+Theoretically, you can never guarantee that the algorithm will terminate. On average however, it takes \textbf{two iterations} to find a good direction.
+
+\subsection{Multisampling}
+
+TODO: at the pixel level
+
+\section{Geometric Structures}
+
+\subsection{Vectors}
+
+\textbf{Operations:}
+\begin{tabular}{lll}
+	TODO & & \\
+\end{tabular}
+
+\textbf{Length of a vector}: $||\vec{v}||^2 = \vec{v}$
+
+\textbf{Angle between vectors}:
+\begin{equation}
+	\begin{aligned}[b]
+		\vec{v} \cdot \vec{w} = ||\vec{v}|| ||\vec{w}|| \cos \theta \\
+		\cos \theta = \frac{\vec{v} \cdot \vec{w}}{||\vec{v}|| ||\vec{w}||}
+	]]
+	\end{aligned}	
+\end{equation}
+
+\textbf{Test for right angles (two vectors are perpendicular)}: $\vec{n} \cdot \vec{v} = 0$
+
+\textbf{Projection onto line}: $\Pi_{\vec{v}} (\vec{w}) = \frac{\vec{v} \cdot \vec{w}}{\vec{v} \cdot \vec{v}} \vec{v}$
+
+\textbf{Distance to a line from a point}: $d = \frac{\vec{n} \cdot p - c}{||\vec{n}||}$
+
+\paragraph{}
+
+The \textbf{cross product} is a special operation only for 3D vectors. It computes a vector $\vec{w}$ which is \textbf{perpendicular} to \textbf{both} $\vec{u}$ and $\vec{v}$ (as shown in Figure \ref{fig:cross-product}). It is computed like so:
+\begin{equation}
+\begin{aligned}
+	\vec{w} &= \vec{u} \times \vec{v} \\
+	&= \left[ \begin{matrix}
+		u_y v_z - u_z v_y \\
+		u_z v_x - u_x v_z \\
+		u_x v_y - u_y v_x
+	\end{matrix} \right]
+	\label{eq:cross-product}
+\end{aligned}
+\end{equation}
+
+\begin{table}[H]
+	\centering
+	\begin{tabular}{ll}
+	\textbf{Distributive} & $ \vec{u} \times r \vec{v} = r(\vec{u} \times \vec{v}) $ \\
+	& $ \vec{u} \times (\vec{v} + \vec{w}) =  \vec{u} \times \vec{v} + \vec{u} \times \vec{w} $ \\
+	\textbf{NOT Associative} & $\vec{u} \times (\vec{v} + \vec{w}) \neq (\vec{u} \times \vec{v}) + \vec{w} $ \\
+	\textbf{Anti-Commutative} & $\vec{u} \times \vec{v} = -\vec{v} \times \vec{u}$ \\
+	\textbf{Perpendicular to $\vec{u},\vec{v}$} & $ \vec{u} \times \vec{v} \perp \vec{u},\vec{v}$ \\
+	& $(\vec{u} \times \vec{v}) \cdot \vec{u} = 0$ \\
+	& $(\vec{u} \times \vec{v}) \cdot \vec{v} = 0$ \\
+	\textbf{Related to sine} & $ ||\vec{u} \times \vec{v}|| = ||\vec{u}|| ||\vec{v}|| |\sin \theta|$ \\
+	\end{tabular}
+	\caption{Properties of Cross Product Operation}
+	\label{tab:cross-product-properties}
+\end{table}
+
+\subsection{Matrices}
+
+Multiplication: TODO: in-place figure
+% http://snipd.net/wp-content/uploads/2011/06/matrix_multiplication1.png
+
+\subsection{Quaternions}
+
+\textbf{Quaternions} are homogeneous rotation coordinates based on complex numbers. A 3D quaternion $q$ is defined as $q = (w, \vec{v}) = (w, x, y, z)$ where $w$ is a scalar value and $\vec{v} = (x, y, z)$ is a 3D vector. This means you can represent three things in quaternion structure:
+\paragraph{}
+\begin{tabular}{ll}
+	\textbf{Scalar $s$} & $s = (s, \vec{0}) = (s, 0, 0, 0)$ \\
+	\textbf{Vector $\vec{v}$} & $ \vec{v} = (0, \vec{v}) = (0, x, y, z)$ \\
+	\textbf{Quaternion $\vec{q}$} & $ q = (w, \vec{v}) = (w, x, y, z)$ \\
+\end{tabular}
+\paragraph{}
+It has the following properties:
+\paragraph{}
+\begin{tabular}{ll}
+	\textbf{Scalar Multiplication} & $sq = qs$ \\
+	TODO & TODO \\
+\end{tabular}
+\paragraph{}
+
+In 2D, quaternions represent translation, rotation and scaling. However, in 3D they only represent \textbf{homogeneous rotations}. They don't do translation or scaling. However, you can \textbf{interpolate rotations smoothly} with quaternions. So to interpolate between two rotations, represent them as quaternions $q_1 and q_2$, interpolate between then with $t$ to get $q_t$ and then \textbf{convert} $q_t$ to a rotation matrix to use in your application.
+
+To \textbf{convert a quaternion to a $4 \times 4$ rotation matrix}, do the following:
+\begin{equation}
+	TODO
+\label{eq:quat-to-matrix}
+\end{equation}
+This assumes $q$ is a \textbf{unit} quaternion.
+
+Quaternions rotate on \textbf{great circles}, which means when we interpolate rotations, we're performing \textbf{spherical (linear) interpolation}. TODO: what this means and arcball controller
+
+\subsection{Lines}
+
+The \textbf{parametric form} of a line $l$ is the same in 3D as 2D:
+\begin{equation}
+	\begin{aligned}[b]
+	\left[ \begin{matrix} x(t) \\ y(t) \\ z(t) \end{matrix} \right] =
+	\left[ \begin{matrix} p_x \\ p_y \\ p_x \end{matrix} \right]
+	+
+	\left[ \begin{matrix} v_x \\ v_y \\ v_x \end{matrix} \right]
+	t
+	\\
+	l = p + \vec{vt}
+	\end{aligned}
+	\label{eq:parametric-3d-line}
+\end{equation}
+where $p$ is any point on $l$, $\vec{v}$ is any vector along $l$ and $t$ is how far along the line you are.
+
+It is also possible to express 3D lines using explicit or implicit forms. However, it is \textbf{no longer possible} to express 3D lines using \textbf{normal form} like you could in 2D.
+
+TODO: computing line given two points
+
+\subsection{Planes}
+
+Like 3D lines, an \textbf{arbitrary 3D plane} $\Pi$ can be described \textbf{parametrically} as well:
+\begin{equation}
+	\Pi = p + s\vec{u} = t\vec{v}
+	\label{eq:parametric-3d-plane}
+\end{equation}
+where $p$ is any point in $\Pi$ and $u,v$ are two \textbf{independent} (not pointing the same way) vectors in $\Pi$ and $s,t$ are how far along the plane you are in the \textbf{horizontal and vertical} directions respectively.
+
+If we have the parametric form of a plane, we have \textbf{two vectors} which lie on the plane. We can use the cross product to compute the normal of the plane:
+\begin{equation}
+	\vec{n} = \vec{u} \times \vec{v}
+\end{equation}
+This means we can express a 3D plane $\Pi$ using \textbf{normal form}. If we compute \textbf{any point} $q$ on $\Pi$ and use the plane's normal $\vec{n}$, the normal form of $\Pi$ is:
+\begin{equation}
+\begin{aligned}[b]
+	\vec{n} \cdot (p + s\vec{u} + t\vec{v}) - c = 0 \\
+	\implies \vec{n} \cdot q - c = 0
+	\;\;\;\;\;\; \text{where }q = (p + s\vec{u} + t\vec{v})
+\end{aligned}
+	\label{eq:3d-plane-normal-form}
+\end{equation}
+for a point $p$ and two vectors $\vec{u},\vec{v}$ on $\Pi$ and two parameters $s,t$.
+
+\subsection{Transformations}
+
+A \textbf{basis} refers to the three primary axes used to \text{pin down} a point $P$ to world coordinates. \textbf{World coordinates} typically refers to the coordinates relation to the absolute origin $O = (0, 0, 0)$ when the three primary axes are $X = (1, 0, 0), Y = (0, 1, 0), Z = (0, 0, 1)$.
+
+Let $B$ be the basis $X,Y,Z$. If we assume a point $p$ haws been expressed \textbf{in terms of} $B'$, how do we found where it is in $B$? What are its world coordinates? This depends on $\vec{e}_x,\vec{e}_y,\vec{e}_z$, the basis vectors of $B'$.
+
+Let $p'$ be $p$ in $B$. To find $p'$, we \textbf{change bases} like so:
+\begin{equation}
+\begin{aligned}[b]
+	p' &= (p_x \vec{e}_x) + (p_y \vec{e}_y) + (p_z \vec{e}_z)  \\
+	&= (p_x \left[ \begin{matrix} e_{x_x} \\ e_{x_y} \\ e_{x_z} \end{matrix} \right]
+	+ (p_y\left[ \begin{matrix} e_{y_x} \\ e_{y_y} \\ e_{y_z} \end{matrix} \right])
+	+ (p_z 	\left[ \begin{matrix} e_{z_x} \\ e_{z_y} \\ e_{z_z} \end{matrix} \right]  \\
+	&= \left[ \begin{matrix}
+		e_{x_x} & e_{y_x} & e_{z_x} \\
+		e_{x_y} & e_{y_y} & e_{z_y} \\
+		e_{x_z} & e_{y_z} & e_{z_z} \\
+	\end{matrix} \right]
+	\left[ \begin{matrix} p_x \\ p_y \\ p_z \end{matrix} \right]
+\end{aligned}
+\end{equation}
+
+\paragraph{\textbf{NOTE: }} Three vectors are being unit length and perpendicular to each other is known as an \textbf{orthonormal basis}. $B = X,Y,Z$ is one such basis.
+
+TODO: figure of changing basis in-place
+
+Changing basis like this is known as \textbf{transformation}. A transformation is an operation that modifies vectors, points, planes, lines and so on. An \textbf{affine} transformation is one that preserves lines -- lines before are still lines after (not curves). However, \textbf{angles} and \textbf{lengths} may change (scale/rotation). \textbf{Cartesian matrices} are always linear and affine transformations.
+
+\subsubsection{Basic Transformations}
+
+\paragraph{\textbf{NOTE: }} CCW means "counter clock-wise".
+\paragraph{}
+
+\textbf{ROTATION ABOUT X AXIS BY $\theta$ RADIANS (CCW)}:
+\begin{equation}
+	R_{\theta} = 
+	\left[ \begin{matrix}
+	1 & 0 & 0 \\
+	0 & \cos \theta & \sin \theta \\
+	0 & -\sin \theta & \cos \theta
+	\end{matrix} \right]
+	\label{eq:rotation-about-x}
+\end{equation}
+
+\textbf{ROTATION ABOUT Y AXIS BY $\theta$ RADIANS (CCW)}:
+\begin{equation}
+	R_{\theta} = 
+	\left[ \begin{matrix}
+	\cos \theta & 0 & -\sin \theta \\
+	& 1 & 0 \\
+	\sin \theta & 0 & \cos \theta \\
+	\end{matrix} \right]
+	\label{eq:rotation-about-y}
+\end{equation}
+
+\textbf{ROTATION ABOUT Z AXIS BY $\theta$ RADIANS (CCW)}:
+\begin{equation}
+	R_{\theta} = 
+	\left[ \begin{matrix}
+	\cos \theta & \sin \theta & 0 \\
+	-\sin \theta & \cos \theta & 0 \\
+	0 & 0 & 1
+	\end{matrix} \right]
+	\label{eq:rotation-about-x}
+\end{equation}
+
+\textbf{INVERSING ORTHONORMAL ROTATION (LIKE XYZ ROTATIONS)}:
+\begin{equation}
+	\begin{aligned}[b]
+	R^{-1} = R^T \\
+	\text{example where }R = \left[ \begin{matrix}
+	1 & 0 & 0 \\
+	0 & \cos \theta & \sin \theta \\
+	0 & -\sin \theta & \cos \theta
+	\end{matrix} \right] \\
+	R^{-1} = \left[ \begin{matrix}
+	1 & 0 & 0 \\
+	0 & \cos \theta & -\sin \theta \\
+	0 & \sin \theta & \cos \theta
+	\end{matrix} \right] \\
+	\end{aligned}
+	\label{eq:inverse-orthonormal-rotations}
+\end{equation}
+where $R^{-1}$ is the \textbf{inverse} of $R$ and $R^T$ is the \textbf{transpose} of $R$.
+
+\paragraph{\textbf{NOTE}: } The transpose $M^T$ of an $r \times c$ matrix $M$ is a $c \times r$ matrix whose rows are the columns of $M$.
+
+\textbf{SCALING}:
+\begin{equation}
+	S = 
+	\left[ \begin{matrix}
+	x & 0 & 0 \\
+	0 & y & 0 \\
+	0 & 0 & z
+	\end{matrix} \right]
+	\label{eq:scaling}
+\end{equation}
+where $x,y,z$ is the amount to scale in the $x$, $y$ and $z$ direction respectively. $x = y = z$ is a \textbf{uniform} scale. If one of the scaling factors is \textbf{negative}, then the operation is essentially \textbf{reflection}.
+
+\textbf{SHEARING (SLANTING)}:
+\begin{equation}
+	S = 
+	\left[ \begin{matrix}
+	1 & 0 & 0 \\
+	0 & 1 & s \\
+	0 & 0 & 1
+	\end{matrix} \right]
+	\label{eq:shearing}
+\end{equation}
+where $s$ is the \textbf{shear factor} which controls how much the top of the object is \textbf{slided sideways}. Shearing essentially \textbf{pushes a vector in a different direction}, as shown in \ref{fig:shearing}.
+
+TODO: figure of shearing
+
+\textbf{TRANSLATION}:
+\begin{equation}
+	\begin{aligned}[b]
+	Tp = 
+	\left[ \begin{matrix}
+	1 & 0 & 0 & a \\
+	0 & 1 & 0 & b \\
+	0 & 0 & 1 & c \\
+	0 & 0 & 0 & 1 \\
+	\end{matrix} \right]
+	\label{eq:translation}
+	\left[ \begin{matrix}
+		x \\ y \\ z \\ w
+	\end{matrix} \right]
+	=
+	\left[ \begin{matrix}
+		x + aw \\ y + bw \\ z + cw \\ w
+	\end{matrix} \right] \\
+	\\
+	& \textbf{equivalent to:}
+	\\
+	&=
+	\left[ \begin{matrix}
+		\frac{x + aw}{w} \\ \frac{y + bw}{w} \\ \frac{z + cw}{w}
+	\end{matrix} \right]
+	=
+	\left[ \begin{matrix}
+		\frac{x}{w} + a \\ \frac{y}{w} + b \\ \frac{z}{w} + c
+	\end{matrix} \right]
+	=
+	\left[ \begin{matrix}
+		\frac{x}{w} \\ \frac{y}{w} \\ \frac{z}{w}
+	\end{matrix} \right]
+	+	
+	\left[ \begin{matrix}
+		a \\ b \\ c
+	\end{matrix} \right]
+	\end{aligned}		
+\end{equation}
+where $a,b,c$ is the amount to move in the $x,y,z$ directions respectively.
+
+\subsubsection{Transforming Normals}
+
+If a surface rotates, the \textbf{normals must also do so}. Rotation can simply be applied to the normals too. However, scaling and shearing \textbf{distorts} normals, meaning they have to be \textbf{recomputed} after the transformed has been applied to the vertices of the object. As such, scaling and shearing are typically not used for real-time programs, where recomputing the normals has a significant impact.
+
+TODO: list of all 3x3 and 4x4 transformation matrices
+
+TODO: even rotation about specific points or axes
+
+\subsubsection{Projective Transformations}
+
+\textbf{Orthographic projection} is a projection that is \textbf{perpendicular to the view plane}, which is commonly used in science and engineering. The $(x, y)$ in the image is the same as the $(x, y)$ in the world. $z$ becomes \textbf{depth} -- the distance of a point from the eye. It projects a point $p$ in the world to a point $q$ in the image plane.
+
+TODO: in-place figure of orthographic projection
+
+An orthographic projection matrix is essentially a $4 \times 4$ \textbf{identity matrix}. Even though it is projecting a 3D point to a 2D image plane, the $z$-value is kept (as it it is needed later (clipping/culling/what object is front of another, etc.).
+
+\begin{equation}
+	\Pi_o = \left[ \begin{matrix}
+		1 & 0 & 0 & 0 \\
+		0 & 1 & 0 & 0 \\
+		0 & 0 & 1 & 0 \\
+		0 & 0 & 0 & 1 \\
+	\end{matrix} \right]
+	\;\;\;\;\; q = \Pi_o p = p
+	\label{eq:orthographic-projection}
+\end{equation}
+where $p$ is a point in the world, $q$ is the $p$ projected onto the image plane and $\Pi_o$ is an orthographic projection matrix.
+
+\textbf{Perspective projection} models the human perspective, leading to more realistic, natural looking images. Lines which are \textbf{parallel in the world} actually \textbf{converge to a vanishing point} from the human eye's perspective, as shown in Figure \ref{fig:human-perspective}. Therefore, perspective projection enforces that parallel lines \textit{always} converge, unless the line is \textbf{perpendicular to the view direction}.
+
+TODO: human perspective figure
+
+Figure \ref{fig:perspective-projection} illustrates what we want to achieve with perspective projection. We trace a ray from the eye to the point $p$. $q$ is the point \textbf{on the viewing plane} the ray intersects with as it travels to $p$. $q$ is the projected point and what is rendered. This means the distance of the eye from \textbf{both} the viewing plane ($d = q_z$ \textit{and} the point ($p_z$) are important.
+
+TODO: perspective projection figure
+
+If we have a point $p = (p_x, p_y, p_z)$, we compute the projected point $q = (q_x, q_y, q_z)$ like so:
+\begin{equation}
+	\begin{aligned}[b]
+	(q_x, q_y, q_z) = \left(
+		p_x \cdot \frac{d}{p_z}, p_y \cdot \frac{d}{p_z}, d
+	\right)
+	= \left(
+		p_x \cdot \frac{d}{p_z}, p_y \cdot \frac{d}{p_z}, p_z \cdot \frac{d}{p_z}
+	\right) \\
+	\textbf{equivalent to:} \\
+	\left(p_x, p_y, p_z, \frac{p_z}{d} \right) \\
+	\textbf{equivalent to:} \\
+	\left[ \begin{matrix}
+		1 & 0 & 0 & 0 \\
+		0 & 1 & 0 & 0 \\
+		0 & 0 & 1 & 0 \\
+		0 & 0 & \frac{1}{d} & 0 \\		
+	\end{matrix} \right]
+	\left[ \begin{matrix} p_x \\ p_y \\ p_z \\ 1 \end{matrix} \right]
+	\end{aligned}
+\end{equation}
+where $d$ is the \textbf{distance from the eye to the image plane}. Since the image plane is 2D, $q_z = d$ always. $d$ is usually 1.
+
+Therefore, the matrix to perform perspective projection is:
+\begin{equation}
+	\Pi_p = \left[ \begin{matrix}
+		1 & 0 & 0 & 0 \\
+		0 & 1 & 0 & 0 \\
+		0 & 0 & 1 & 0 \\
+		0 & 0 & \frac{1}{d} & 0 \\
+	\end{matrix} \right]
+	\;\;\;\;\; q = \Pi_p p
+	\label{eq:perspective-projection}
+\end{equation}
+where $d$ is the distance from the eye to the viewing plane, $p$ is a point in the world, $q$ is the $p$ projected onto the image plane and $\Pi_p$ is a perspective projection matrix.
+
+\subsubsection{Viewport Transformation}
+
+TODO: matrix for standard OpenGL viewport transformation
+
+\subsubsection{Transformation Composition}
+
+TODO: the fact you multiply matrices and the order in which you should do them for the desired order (matrix multiplication done in reverse order of the order you want the transformations to occur)
+
+\subsubsection{Quaternion Transformations}
+
+TODO: great circle rotations
+
+\subsection{Polygons and Polyhedra}
+
+TODO: make sure to mention CCW order of triangles
+A \textbf{polygon} is a 2D shape, such as a triangle, square, pentagon, hexagon and so on. A circle is also a polygon, which has an infinite number of sides.
+
+A \textbf{polyhedra} is a 3D shape of \textbf{vertices} connected with \textbf{edges}. It can be rendered as a \textbf{wireframe}, which means the edges are rendered. Alternative, polyhedra can be rendered as a \textbf{solid surface}, which means the \textbf{faces} are rendered. These faces are \textbf{broken into triangles}, whose vertices are specified in CCW order of position \textbf{from the outside}.
+
+The inside of the polygon is defined by its \textbf{winding order}. Take the triangle in Figure \ref{fig:winding-order}. Defining it as ABC (from point A to point B to point C, then back to A) makes it clockwise (CW), so the polygon is inside on the right. Defining it as ACB makes it anti-clockwise (CCW), so it's inside on the left.
+
+Defining a \textbf{consistent winding order} for your polygons (i.e. having all polygons CW or CCW, not mixing and matching) is important because it's used to catch problematic polygons. Additionally, many algorithms and techniques assume a particular winding order. CCW is the standard convention, so always use that!
+
+TODO: winding order figure
+
+\textbf{Platonic solids} are regular convex polyhedra, where all the faces are the same size and shape. Each face is a regular polygon, and each edge has the same length. \textbf{Convex} means there are no indentations in the image, it only \textbf{protrudes outwards}. Figure \ref{fig:platonic-solids} shows the \textbf{five} platonic solids.
+
+TODO: figure showing all the different platonic solids
+
+The normal of a triangle is a vector that is perpendicular to the \textbf{plane} the triangle lies on. Given the positions of triangle $T$'s three vertices $P, Q, R$, we compute the \textbf{normal of the triangle} $\vec{n}$ like so:
+\begin{equation}
+	\begin{aligned}[b]
+	\vec{u} = (R - Q) \;\;\;\;\; \vec{v} = (P - Q) \\
+	\vec{n} = \vec{u} \times \vec{v} \\
+	\implies \vec{n} = (R - Q) \times (P - Q) \\
+	\vec{n} = \frac{\vec{n}}{||\vec{n}||} \;\;\;\;\;\; \text{normalise}
+	\end{aligned}
+	\label{eq:triangle-normal}
+\end{equation}
+We find two vectors that represent two edges of the triangle (which form a plane) and then use the cross product to find a vector perpendicular to both of the vectors (thus, perpendicular to the plane and the triangle). The normal vector is then \textbf{normalised to a unit vector} to make it play ball with lighting calculations later (we only really care about the direction of the normal anyway). This is illustrated in Figure \ref{fig:triangle-normal}.
+
+TODO: triangle normal figure
+
+\paragraph{\textbf{NOTE: }}Make sure \textbf{winding order} of vertices/triangle is \textbf{CCW}! Otherwise, the normal will be in the \textbf{opposite, wrong direction}.
+
+\section{Lighting}
+
+Light is:
+\begin{itemize}
+	\item emitted from a source
+	\item reflected from a surface
+	\item absorbed by a surface or object
+\end{itemize}
+OpenGL uses mostly \text{reflected light}, meaning \textbf{refraction} is completely ignored.
+
+\textbf{Light sources} can be characterised in terms of:
+\begin{itemize}
+	\item \textbf{Position} -- where they are in the scene
+	\item \textbf{Shape} -- the geometry of the shape, what it looks like, its surfaces, etc.
+	\item \textbf{Intensity} -- how much light they emit
+	\item \textbf{Colour} -- the spectral distribution (colour) of the light emitted
+\end{itemize}
+
+\textbf{Point lights} are often used because they are easy to model and render, making them simply geometrically. Distance lamps, the sun, incandescent bulbs and so on can all be \textit{approximated} using point light sources. Point light sources emit light with a \textbf{uniform intensity in all directions}. To the human viewer, it appears as it light sources such as the sun, bulbs, etc. do this. This is why approximating them with point light sources produces good results. Point light sources are specified using all four properties discussed earlier
+
+TODO: in-place figure of point source light
+
+\subsection{Global Illumination}
+
+Some of the light which hits the eye (or camera) is \textbf{directly} from the light source. However, the rest of the light bounces around for a while. This is known as \textbf{direct lighting}. However, light may bounce from \textbf{many} different surfaces before it reaches the eye, as shown in Figure \ref{fig:global-illumination}. This is known as \textbf{indirect} lighting.
+
+\textbf{Global illumination} refers to algorithms in which \textbf{indirect} lighting, as well as \textbf{direct} lighting is used to compute the lighting of a pixel. Doing this typically requires the \textbf{paths} photons take from the light source to the eye (after multiple bounces) to be considered. However, computing the path every single photon takes before it hits the eye is \textbf{extremely expensive computationally}.
+
+Therefore, to achieve real-time rendering, this process needs to be simplified.
+
+\subsection{Local Illumination}
+
+\textbf{Local illumination} only takes \textbf{direct lighting} into consideration. That is, only light that travels straight from the light source to an object, without hitting other objects and bouncing, is considered.
+
+TODO: local illumination in-place figure
+
+\subsubsection{Phong Lighting Model}
+
+A popular technique for modelling direct lighting is the \textbf{Phong lighting model}. The total lighting (colour) at a point $p$ is computed using Equation \ref{eq:phong-lighting-model}. This requires four types of light:
+\begin{itemize}
+	\item \textbf{Specular (Shiny) Reflection} -- TODO
+	\item \textbf{Diffuse (Matt) Reflection} -- TODO
+	\item \textbf{Ambient (Background) Reflection) Reflection} -- TODO
+	\item \textbf{Emitted Light} -- TODO
+\end{itemize}
+Each of these contribute to the final lighting colour, as shown in Equation \ref{eq:phong-lighting-model}.
+
+\begin{equation}
+	I_{total}(p) = I_{specular}(p) + I_{diffuse}(p) + I_{ambient}(p) + I_{emitted}(p)
+	\label{eq:phong-lighting-model}
+\end{equation}
+where $I$ stands for "incoming light".
+
+\textbf{Emitted light} is the light from a glowing object. For simplicity, it is uniform in all directions. The amount of light \textbf{emitted} from a point is \textbf{not affected by incoming light}, meaning:
+\begin{equation}
+	I_{emitted}(p) = l_{emitted}
+	\label{eq:phong-emitted}
+\end{equation}
+where $l_{emitted}$ is a \textbf{constant parameter} for that specific point $p$.
+
+Some photons bounce around different objects so much is it very hard to identify their sources. In other words, the light/photons has hit each surface \textbf{roughly the same amount}. This makes ambient lighting a "base" amount of light in the scene, in which the other light contributions are added to.
+
+TODO: in-place figure of ambient lighting
+
+\begin{equation}
+	I_{ambient}(p) = l_{ambient} r_{ambient}
+	\label{eq:phong-ambient}
+\end{equation}
+where $l_{ambient}$ is the \textbf{colour/intensity} of the incoming ambient lighting and $r_{ambient}$ is the amount of ambient light point $p$ \textbf{reflects} (how much of the light we can see on the point). This allows some objects to reflect more ambient lighting than others, leading to more realistic looking images.
+
+\paragraph{\textbf{NOTE: }} $r_{ambient}$ defines the \textbf{albedo} of the surface at point $p$, which determines the ambient reflectivity of it.
+
+The normal of a surface is used to measure the \textbf{angle of reflection} for light. Perfect reflection occurs when the \textbf{angle of incidence = angle of reflection}, as shown in Figure \ref{fig:perfect-reflection}.
+
+\textbf{Specular reflection} models specular light, which spreads out from the point of surface where perfect reflection occurs. It reflects light \textbf{strongly} for angles \textbf{close to perfect}, making the reflection weaker as the angles get further away from perfect. Therefore, specular light creates a  \textbf{highlight of bright light} on the part of the surface where the perfect reflection occurs, which gradually diminishes as the angle of reflection becomes less perfect.
+
+TODO: perfect reflection figure
+
+Computing specular reflection requires the \textbf{angle} between the \textbf{surface normal and bisector}. The bisector $\vec{v_b}$ can be computed like so:
+\begin{equation}
+	\vec{v_b} = \frac{\vec{v_l} + \vec{v_e}}{2}
+	\label{eq:phong-bisector}
+\end{equation}
+where $\vec{v_l}$ is a vector from the \textbf{point on the hit surface to the light}, $\vec{v_e}$ is a vector from \textbf{point on the hit surface to the eye/camera}. These two vectors are illustrated in Figure \ref{fig:phong-specular-bisector}.
+
+TODO: figure with bisector on (use annotation from my slide in caption)
+
+With the surface normal and bisector, the amount of specular contribution can be computed like so:
+\begin{equation}
+	I_{specular}(p) = l_{specular} r_{specular} \left(
+	\frac{\vec{n} \cdot \vec{v_b}}{||\vec{n}||||\vec{v_b}||}
+	\right)^{h_{specular}}
+	\label{eq:phong-specular}
+\end{equation}
+where $\vec{n}$ is the surface normal, $\vec{v_b}$ is the bisector, $l_{specular}$ is the colour/intensity of the specular light coming from the light source, $r_{specular}$ is the amount of specular light the surface reflects, $h_{specular}$ is the \textbf{specular highlight coefficient}. 
+
+$h_{specular}$ is also known as \textbf{"shininess"}, as it controls the \textbf{size} of the specular highlight present on a surface. \textbf{Larger} values for $h_{specular}$ make the specular highlight \textbf{smaller}, as shown in Figure \ref{fig:specular-highlights}
+
+TODO: figure showing some specular highlights in-place
+
+\textbf{Diffuse light} is produced from \textbf{rough surfaces}. This means rough at the microscopic scale, so the roughness may not even be visible to the human eye. Here, the surface normal is \textbf{essentially random}, due to the rough and bumpy surface (although the surface normals will still be orientated in some way). In the Phong lighting model however, diffuse light still uses the surface normal. 
+
+TODO: in-place figure diffuse lighting
+
+Diffuse light is the \textbf{light spread over the surface}, which dTODOepends on the \textbf{angle of incidence} and \textit{not} the angle of reflection. It is computed like so:
+\begin{equation}
+\begin{aligned}[b]
+	I_{diffuse}(p) &= l_{diffuse} r_{diffuse} cos \theta_i \\
+	&= l_{diffuse} r_{diffuse} \frac{\vec{n} \cdot \vec{v_l}}{||\vec{n}||||\vec{v_l}||}
+\end{aligned}
+\end{equation}
+where $\theta_i$ is angle of incidence, $\vec{v_l}$ is a vector from the hit point of the surface to the light source, $\vec{n}$ is the surface's normal, $l_{diffuse}$ is the intensity of the diffuse light and $r_{diffuse}$ is the diffuse reflectivity of the surface.
+
+Therefore, the final equation to compute the \textbf{local illumination} at a given point is:
+\begin{equation}
+\begin{aligned}[b]
+	I_{total}(p) &= I_{specular}(p) + I_{diffuse}(p) + I_{ambient}(p) + I_{emitted}(p) \\
+	&= l_{specular} r_{specular} \left( 
+	\frac{\vec{n} \cdot \vec{v_b}}{||\vec{n}||||\vec{v_b}||}
+	\right)^{h_{specular}} \\
+	&+ l_{diffuse} r_{diffuse} \frac{\vec{n} \cdot \vec{v_l}}{||\vec{n}||||\vec{v_l}||} \\
+	&+ l_{ambient} r_{ambient} \\
+	&+ l_{emitted} \\
+\end{aligned}
+\label{eq:phong-lighting-model-full}
+\end{equation}
+
+\subsubsection{Coloured Lighting and Saturation}
+
+Throughout the Phong lighting model, the \textbf{intensity} of lights has been discussed. SO what is intensity exactly? This could be \textbf{scalar} value, which just determines the amount of light which \textbf{hits} the surface and the amount that is \textbf{reflected}. Alternatively, the intensity could be a vector which represents \textbf{RGB colour}. So the $l_{x}$ and $r_{x}$ constants would then be the intensity of each colour component and the amount of each colour the surface reflects respectively. This is called \textbf{colour lighting}.
+
+Both surfaces and lights have colour, so how do you combine the two? For example, if a red light hits a green surface, \textbf{yellow} is reflected, making the surface appear yellow. This can be done using \textbf{colour modulation}, as shown in Equation \ref{eq:colour-modulation}.
+
+\begin{equation}
+\begin{aligned}[b]
+	output_r = l_r s_r \\
+ 	output_g = l_g s_g \\
+	output_b = l_b s_b
+\end{aligned}
+\label{eq:colour-modulation}
+\end{equation}
+where $o$ is the output colour, $l$ is the colour of the light and $s$ is the colour of the surface.
+
+\textbf{Saturation} can occur in the final colour of the point using the Phong lighting model, as four types of light are \textbf{added} together. This is where the intensity of any colour can be greater than 100\% ($\geq 1.0$). This makes little sense in the context of the lighting model, so this must be prevented in some way. One simple workaround is to simply \textbf{clamp} all intensity values to 1.0 if they're $\geq 1.0$. This still means the scene will have very bright colours if saturation occurs (typically white).
+
+\subsubsection{Phong and Gouraud Shading Models}
+
+We have a lighting model, but how do we use the model to \textbf{shade} the objects in the scene? This involves lighhting the pixels/vertices an object's geometry, which are typically \textbf{triangles}. There are two main methods for doing this:
+\begin{itemize}
+	\item \textbf{Phong Shading Model (per-pixel shading} -- computes shading for each pixel in the image. This is more realistic as each pixel is a different shade. This is expensive however, as you have to interpolate normals and so on.
+	\item \textbf{Gouraud Shading Model  (per-vertex shading} -- computes light at each vertex, then \textbf{interpolates} the colours through the pixels of the triangle using barycentric interpolation. This is cheaper computationally and is used by OpenGL.
+\end{itemize}
+
+\subsubsection{Lighting Modulation}
+
+TODO: from lecture 5 (is subsection of Local Illumination?)
+
+\section{Surfaces}
+
+\textbf{Surfaces} in real-life is not the flat, simply geometry covered so far. They can be complex, curved and smooth. How do you render those in a fast, efficient way? We \textbf{approximate} them using the simple geometry. Surfaces are typically represented  \textbf{triangular meshes} -- more triangles means more detail. This means for a surface we need two things:
+\begin{enumerate}
+	\item a way of describing the surface geometrically (\textbf{discretising it}). This generates the points of the surface.
+	\item a way of \textbf{triangulating} the surface (using those points to form triangles that approximate the surface)
+\end{enumerate}
+
+\textbf{Smooth surfaces} (see Figure \ref{fig:round-objects} in particular are challenging. To render these, we approximate the geomtry using triangles and use \textbf{Gouraud shading} to approximate lighting. That is, we have a \textbf{normal at each vertex} based on the surface. This means \textbf{every vertex in a triangle has the same normal}.
+
+TODO: figure of round objects
+
+\subsection{Vertex}
+
+TODO: define vertex and state how it can contain normals, colours, etc. for lighting
+
+TODO: state how most surfaces have per-vertex normals which are interpolated  (Phong shading model), although per-face normals can be used (Gouroud shading model)
+
+\subsection{Parametrising Cylinders}
+
+For a cylinder of radius $r$ and height $2h$, we \textbf{parametrise over} $s \in [-1, 1], t \in [-\pi, \pi]$:
+\begin{equation}
+	\begin{aligned}[b]
+	p(s, t) = (r \sin t, r \cos t, hs) \\
+	\vec{n}(\theta = s,t) = (r \sin t, r \cos t, 0)
+	\\
+	\textbf{Ends of Cylinder (vertices in top and bottom circle caps)} \\
+	p_{bottom}(s, t) = (rs \sin t, rs \cos t, -h) \\
+	\vec{n}_{bottom}(s, t) = (0, 0, -1) \\
+	p_{top}(s, t) = (rs \sin t, rs \cos t, h) \\
+	\vec{n}_{top}(s, t) = (0, 0, 1) \\
+	\end{aligned}
+	\label{eq:cylinder-parametrisation}
+\end{equation}
+
+To approximate the cylinder, \textbf{interval sizes} $\Delta s$ and $\Delta t$ are needed for parameters $s,t$. $\Delta s = 2stacks$ where $stacks$ is \textbf{number of stacks} to have in the cylinder. $\Delta t = \frac{\pi \cdot currentSeg \cdot 2}{segments}$, where $currentSeg$ is the current segment and $segments$ is the number of segments.
+
+TODO: in-place figure of parametrising cylinder 
+
+\subsection{Parametrising Spheres}
+
+Suppose we have a sphere with radius $r$. At a given $\phi$, the sphere is just a circle of radius $r_{\phi} = r \cos \phi$ and the $z$-value of all points on that circle is $z_{phi} = r \sin \phi$. This is shown in Figure \ref{fig:parametrising-sphere-1}.
+
+Since we know have a circle at $\phi$, finding the points on the circle is simple. So to compute the vertices of a sphere using parametrisation, the following steps are performed:
+\begin{itemize}
+	\item Let $rings$ be the \textbf{number of rings} of the sphere to render (more rings mean the sphere is more detailed).
+	\item Let $quadsPerRing$ be the \textbf{number of quads per ring} to render
+	\item Let $i = 1$ be the current ring to render.
+	\item For $i \in [1,rings]$:
+	\begin{enumerate}
+		\item Compute $\phi_i$ and $\phi_{i+1}$ using Equation \ref{eq:sphere-ring-phi}
+		\item Let $j = 1$ be the current quad of the ring to render
+		\item For $j \in [1,quadsPerRing]$:
+		\begin{enumerate}
+			\item Compute $theta_j$ and $theta_{j+1}$ using Equation \ref{eq:sphere-quad-theta}
+			\item Compute $x,y,z$ values for \textbf{four vertices in CCW order} using the four combinations of $\phi$ and $\theta$ described in Equation \ref{eq:sphere-quad-phi-theta-combinations}
+			\item Compute normal of each vertex using their corresponding values for $\phi$ and $\theta$ using Equation \ref{eq:sphere-normal}
+		\end{enumerate}
+	\end{enumerate}
+\end{itemize}
+
+\begin{equation}
+	\phi_i = -\frac{\pi}{2} + i \left( \frac{\pi}{rings} \right)
+	\label{eq:sphere-ring-phi}
+\end{equation}
+
+\begin{equation}
+	\theta_j = j \left( \frac{2 \pi}{quadsPerRing} \right)
+	\label{eq:sphere-quad-theta}
+\end{equation}
+
+\begin{equation}
+	\phi_i,\theta_j \;\;\;\;
+	\phi_i,\theta_{j+1} \;\;\;\;
+	\phi_{i+1},\theta_{j+1} \;\;\;\;
+	\phi_{i+1},\theta_j \;\;\;\;	
+	\label{eq:sphere-quad-phi-theta-combinations}
+\end{equation}
+
+The normal of any point (generated using $\phi$) on the sphere is the \textbf{vector from origin to the point on the surface} and is computed like so:
+\begin{equation}
+	\vec{n} = p - O = (r \cos \phi \cos \theta, r \cos \theta \sin \theta)
+	\label{eq:sphere-normal}
+\end{equation}
+where $p$ is the point on the sphere and $O$ is origin.
+
+TODO: both sphere parametrising figures
+
+\paragraph{\textbf{FINDING PARAMETERS FROM POINT ON SPHERE}: } It is possible to find the parameters $\phi,\theta$ for a point $p = (x, y, z)$ on the sphere. This is done like so:
+\begin{equation}
+	\theta = \arctan \frac{y}{x} \;\;\;\;\;\;
+	\phi = \arcsin \frac{z}{r}
+	\label{eq:sphere-parameters-from-point}	
+\end{equation}
+From these parameter,s it is possible to find the \textbf{texture coordinates} of the point if \textbf{spherical UV mapping} is used!
+\begin{equation}
+	s = \frac{\theta}{2\pi} + \frac{1}{2} \;\;\;\;\;\;
+	t = \frac{\phi}{\pi} + \frac{1}{2}
+	\label{eq:sphere-parameters-uv-coords}
+\end{equation}
+\paragraph{}
+
+\subsection{Parametrising Triangles}
+
+TODO
+
+\subsection{Interpolation using Parametrising}
+
+TODO: using barycentric interpolation to interpolate the normals (Phong shading model) as well as colours and texture coordinates
+
+\section{Textures}
+
+Suppose you wanted to render the \textbf{tartan pattern} in Figure \ref{fig:tartan}. Doing this geometry is very expensive -- consider the amount of vertices (positions, normals and colours) you will need. The \textbf{shape} of the surface is essentially a square, which only needs \textbf{four vertices}.
+
+TODO: tartan figure
+
+We can approximate the tartan by rendering a square (two triangles) and \textbf{painting a texture} over it. A \textbf{texture} is an 2D image painted on a surface. Using textures reduces the geometric complexity of an object, but does require some complex processing. Textures are made of \textbf{texels}, which are essentially the \textbf{pixels of the 2D texture image}.
+
+\subsection{Parametrising Textures}
+
+We need some way of specifying \textit{where} each texel goes on the geometric surface (e.g. square). This is achieved by specifying a \textbf{coordinate system on the surface}.
+
+Texture images are \textbf{parametrised}. Each texel (pixel in the texture image) has an $(i,j)$ location in the image. Surfaces can also be parametrised, meaning each point on the surface has a \textbf{texture coordinate} $(s, t)$ associated with it. A mapping from $(s, t) \rightarrow (i, j)$ is defined to determine which texel is assigned to each point on the surface. $s,t$ are typically \textbf{clamped} in the range of $[0,..1]$.
+
+Suppose a surface has a texture whose texture image has $width \times height$ pixels. Given the $(s, t)$ coordinate of a point on a surface, the $(i, j)$ texel coordinate can be computed like so:
+\begin{equation}
+	i = \text{round}(s \times width) \;\;\;\;\;
+	j = \text{round}(t \times height)
+	\label{eq:texture-coord}
+\end{equation}
+Now $(i, j)$ can be used to retrieve the colour of the texel (texture image pixel) and thus, the colour of that point of the surface.
+
+TODO: figure of textured spheres
+
+\subsection{Texture Coordinates of Sphere}
+
+TODO: figure of map image and then textured sphere
+
+Figure \ref{fig:textured-sphere} illustrates how you can \textbf{wrap} a flat, 2D texture image on a sphere, to achieve effects such as planets. To compute the $(s, t)$ texture coordinate of a point on a sphere, Equation \ref{eq:texcoord-sphere} is used.
+
+\begin{equation}
+	s = 0.5 + \frac{arctan2(p_z, p_x)}{2 \pi} \;\;\;\;\;
+	t = 0.5 - \frac{arcsin(p_y)}{\pi}
+	\label{eq:texcoord-sphere}
+\end{equation}
+where $p = (p_x, p_y, p_z)$ is a point on the sphere.
+
+\subsection{Texture Modulation}
+
+Colour can be used \textbf{with or without lighting}. There are two options:
+\begin{itemize}
+	\item the texture can \textbf{replace} lighting calculation: $Colour_{out} = Colour_{texture}$
+	\item the texture can \textbf{modulate} the lighting calculation: $Colour_{out} = Colour_{texture} \cdot Colour_{shading}$
+\end{itemize} 
+where $Colour_{texture}$ is the texel at point $p$ and $Colour_{shading}$ is the lighting at point $p$. 
+
+With texture modulation, it is common to have lights be all white and have the colour provided by the textures of objects. This is shown in \ref{fig:texture-modulation}.
+
+TODO: texture modulation with sphere figure
+
+\section{Homogeneous Coordinates}
+
+Using $3 \times 3$ Cartesian matrices for transformations has some problems, as you can't:
+\begin{itemize}
+	\item \textbf{represent translation} in matrix form
+	\item \textbf{represent perspective} in matrix form	
+	\item apply sequences of transformations \textbf{efficiently}
+\end{itemize}
+
+\textbf{Homogeneous coordinates (HC)} allow us to do all of these things. These coordinates exist in all dimensions. In 2D, $(x, y)$ becomes $(x, y, w)$. $w$ is known as the \textbf{scale factor}, which is usually 1. Essentially, $(x, y, w)$ refers to the point $(\frac{x}{w}, \frac{y}{w})$, meaning $(1, 2, 1)$ is the same as $(3, 6, 3)$. Using HC, a regular point becomes a \textbf{line in space}, as shown in Figure \ref{fig:hc-2d}. This allows us to represent \textbf{projection} as well.
+
+TODO: 2D HC figure
+
+In 3D, homogeneous coordinates are $(x, y, z, w)$, where $w$ is still a scale factor. $(x, y, z, w)$ refers to the point $(\frac{x}{w}, \frac{y}{w},m \frac{z}{w})$. When $w = 0$, $(x,y,z)$ refers to a \textbf{vector}, because $w = 0$ implies that the line $(x, y, z, 0)$ is \textbf{infinitely far out}. When $w = 1$, $(x, y, z)$ is typically a \textbf{point}.
+
+Homogeneous transforms in 3D are now 4x4 matrices. The \textbf{identity matrix} $I$ is:
+\begin{equation}
+	I = \left[ \begin{matrix}
+	1 & 0 & 0 & 0 \\
+	0 & 1 & 0 & 0 \\
+	0 & 0 & 1 & 0 \\
+	0 & 0 & 0 & 1 \\
+	\end{matrix} \right]
+\end{equation}
+
+Rotation, scaling and shearing are pretty much the same, just with the extra row/column added (where $M_{44} = 1$). \textbf{Translation} is now possible, using the matrix in Equation \ref{eq:translation}.
+
+So why does translation work with homogeneous transformation matrices? Consider 2D again. In 2D, the third column of the transformation matrix ($w$) is essentially $z$ in 3D, which means we have a 3D \textbf{shear operation}:
+\begin{equation}
+p' = \left[ \begin{matrix}
+	1 & 0 & v_x \\
+	0 & 1 & v_y \\	
+	0 & 0 & 1 \\
+	\end{matrix} \right] p
+\end{equation}
+$p$ moves in direction $v$ \textbf{proportional} to $w$ (through shearing), which line son the homogeneous line representing $p'$. In other words:
+\begin{itemize}
+	\item in homogeneous coordinates, all 2D points become lines in space
+	\item the 2D translation is a shear operation in 3D
+	\item a shear is performed to a 2D point $p$ in 3D
+	\item the resulting 3D point is a \textbf{line that represents} $p'$ in 2D
+	\item $p'$ is in 2D space and is the translated $p$
+\end{itemize}
+This is illustrated in Figure \ref{fig:homogeneous-transformations}.
+
+\textbf{Arbitrary rotation} refers to when you want to \textbf{rotate about an arbitrary point} and \textit{not} the origin of the current basis. This is equivalent of performing the following steps:
+\begin{enumerate}
+	\item translate by $(O - O')$
+	\item rotate at $O$ using matrix $R$
+	\item translate by $(O' - O)$
+\end{enumerate}
+
+TODO: in-place figure of arbitrary rotation
+
+To do this with Cartesian transformations, you have to do the following:
+\begin{equation}
+	p' = (R(\vec{v} + p)) - \vec{v}
+\end{equation}
+where $p$ is the point to rotate, $\vec{v} = (a, b, c)$ is a \textbf{translation vector}  and $R$ is a rotation matrix.
+
+In homogeneous coordinates, since translation can be represented using matrices, the operations can all be performed as a chain of matrix multiplications:
+\begin{equation}
+\begin{aligned}[b]
+	T = (O - O') \\
+	T^{-1} = (O' - O) \\
+	M = TRT^{-1} \\
+	p' = Mp
+\end{aligned}
+	\label{eq:homogeneous-arbitrary-point-rotation}
+\end{equation}
+where $O$ is origin, $O'$ is the point to rotate about, $T,T^{-1}$ are opposite translation matrices and $R$ is a rotation matrix.
+
+A matrix that represents rotation about point $(a, b, c)$ around the $x$-axis can be constructed like so:
+\begin{equation}
+\begin{aligned}[b]
+	Mp &= TRT^{-1}p \\
+	&= 	\left[ \begin{matrix}
+	1 & 0 & 0 & -a \\
+	0 & 1 & 0 & -b \\
+	0 & 0 & 1 & -c \\
+	0 & 0 & 0 & 1 \\
+	\end{matrix} \right]
+	\left[ \begin{matrix}
+	1 & 0 & 0 & 0 \\
+	0 & \cos \theta & \sin \theta & 0\\
+	0 & -\sin \theta & \cos \theta & 0 \\
+	0 & 0 & 0 & 1
+	\end{matrix} \right]
+	\left[ \begin{matrix}
+	1 & 0 & 0 & a \\
+	0 & 1 & 0 & b \\
+	0 & 0 & 1 & c \\
+	0 & 0 & 0 & 1 \\
+	\end{matrix} \right]
+	\left[ \begin{matrix}
+	p_x \\ p_y \\ p_z \\ p_w
+	\end{matrix} \right] \\
+	&= 	\left[ \begin{matrix}
+	1 & 0 & 0 & 0 \\
+	0 & \cos \theta & \sin \theta & b \cos \theta - c \sin \theta - b \\
+	0 & -\sin \theta & \cos \theta & b \sin \theta + c \cos \theta - b \\
+	0 & 0 & 0 & 1
+	\end{matrix} \right] 
+	\left[ \begin{matrix}
+	p_x \\ p_y \\ p_z \\ p_w
+	\end{matrix} \right] \\	
+\end{aligned}
+\label{eq:matrix-composition}
+\end{equation}
+
+If we use \textbf{Cartesian coordinates} to perform an arbitrary rotation, we have to add a vector, rotate (matrix multiplication) and then subtract a vector. This means there 3 adds, 9 multiplications + 6 adds and another 3 adds, meaning \textbf{12 adds and 9 multiplications} in total to \textbf{rotate a single point}. For 100 vertices, this results in 3,600 adds and 2,700 vertices.
+
+If we use \textbf{homogeneous coordinates} to perform an arbitrary rotation, it takes 4,800 multiplications and 3,6000 adds. However, we can \textbf{pre-compute} a single matrix. The pre-computation takes 128 multiplications and 96 adds; using that matrix on the 100 vertices takes 1,600 multiplications and 1,200 adds. Therefore, the total operations is \textbf{1,728 multiplications and 1,296 adds}. This makes using homogeneous coordinates \textbf{over 50\% faster} than Cartesian coordinates, so there are speed advantages to using such a representation. Additionally, there is \textbf{less book-keeping} as you only need to store a single, pre-computed matrix.
+
+Figure \ref{fig:homogeneous-transformation-matrix-breakdown} breaks down a $4 \times 4$ homogeneous transformation matrix and what transformations can be performed with each part of the matrix.
+
+TODO: figure of homogeneous matrix breakdown
+
+To summarise, homogeneous coordinates allow you to represent \textit{all} affine transformations in a $4 \times 4$ matrix:
+\begin{itemize}
+	\item rotation, scaling, shearing
+	\item translation
+	\item projection (orthographic, oblique, perspective)
+\end{itemize}
+HC represents \textbf{points and vectors} differently and they are \textbf{much more efficient in practice}, despite having more coordinates. This is the reason OpenGL is built around $4 \times 4$ transformation matrices and not $3 \times 3$.
+
+\section{Programmable Pipeline}
+
+TODO: discuss how THREE PARTS of the fixed function pipeline can now be manually programmed (by writing mini programs known as shaders on the GPU)
+
+TODO: figure highlighting programmable parts
+
+TODO: definition of vertex, fragment and geometry(??) shader
+
+TODO: how to use the shaders in OpenGL (steps in code)
+
+\subsection{GLSL}
+
+TODO: basic language./syntax stuff about GLSL (use GLSL cheatsheet online)
+
+\subsection{Example}
+
+TODO: example of a vertex/fragment shader using GLSL here
+
+\section{Advanced Transformations}
+
+\subsection{Rotation and Gimbal Lock}
+
+TODO: issues with rotation matrices -- GIMBAL LOCK
+
+TODO: euler angles
+
+TODO: define degrees of freedom and what it means
+
+TODO: refer to quaternions as a solution to the problems
+
+\subsection{Arcball Controllers}
+
+TODO: arcball stuff
+
+\subsection{Animation}
+
+The eye sees events approximately every $\frac{1}{24}$th of a second. Anything shorter, the eye mostly misses. Therefore, to animate on a computer, we \textbf{show more than 24 frames per second}. The eye interprets this as motion, but each image is static. Films are pre-computed and run exactly at 24 FPS. Computes render images \textbf{on the fly}, which introduces the following \textbf{problems}:
+\begin{itemize}
+	\item \textbf{Ghosting} -- pixels have variable age (a few outdated pixels interfering with new image)
+	\item \textbf{Tearing} -- images change halfway as the next image image is being rendered
+	\item \textbf{Stutter} -- image repeats before changing
+\end{itemize}
+30 FPS is a good goal, but 60 or 120 FPS is smoother.
+
+\subsubsection{Double Buffering}
+
+The solution to these problems is \textbf{double buffering}. Here, we have \textbf{two copies} of the framebuffer, which is the buffer which stores the renderred image to display to the user. We render the next frame on one copy and show the current frame on the other. When we've finished rendering the next frame, we \textbf{swap the buffers} (e.g. using \texttt{glutSwapBuffers()}). This means that the screen is \textbf{never being written to} when it's shown to the user.
+
+\subsubsection{Time-dependant Transformations}
+
+To simulate motion, we compute the following for each frame:
+\begin{itemize}
+	\item new transformations for each object (e.g. for movement, rotation, etc.)
+	\item new lighting (sometimes)
+	\item new colour/textures (occasionally)
+	\item new geometry (rarely, as most meshes stay the same, it's just the \textbf{transformations} of those meshes that change)
+\end{itemize}
+
+This requires us to know the time $t$, so that we can \textbf{dynamically} compute the position and orientation of each object (as well as other state such as lights and surface colours) depending on the frame. This also allows us to \textbf{fast-forward, rewind, speed up or slow down} the simulation.
+
+\subsubsection{Bones and Joints}
+
+For more complex animation, \textbf{skeletal animation} is used. This defines as object in terms of two things:
+\begin{itemize}
+	\item \textbf{Bone} -- each bone has its local coordinate system, which is represented as a transformation matrix \textbf{relative} to its parent's local coordinate system. A bone may have one parent and multiple children
+	\item \textbf{Joint} -- points where \textbf{two bones meet}. The \textbf{child} bone \textbf{rotates around the joint} and is fixed in the parent/stationary bone's coordinates. The join is the origin of the child bone's coordinate system.
+\end{itemize}
+To \textbf{move a bone}, simply rotate it around the joint (its origin) using a rotation matrix.
+
+An example of a skeleton is shown in Figure \ref{fig:example-skeleton}. The \textbf{joints} define the \textbf{origin} of its children bones and the \textbf{bones} define the \textbf{orientation} of the objects they represent. Since bones are children of other bones, a hierarchy is created. This is called the \textbf{animation/bone hierarchy}, which contains a single \textbf{root bone}. Figure \ref{fig:example-animation-hierarchy} shows the animation hierarchy of the person from Figure \ref{fig:example-skeleton}.
+
+TODO: human skeleton example
+
+TODO: human hierarchy
+
+\subsubsection{Hierarchical Transformations and Scene Graphs}
+
+Now there is a hierarchy of objects, where the \textbf{transformations of parents affect the children}, how do actually compute \textit{where} a bone should and what orientation it should (i.e. its specific transformation). Using the hierarchy in Figure \ref{fig:example-animation-hierarchy}, what do we have to do to compute the transformation of the left foot? We do this:
+\begin{equation}
+	T'_{left foot} = T_{pelvis}T_{chest}T_{left thigh}T_{left shin}T_{left foot}
+\end{equation}
+where $T_{x}$ is the transformation matrix for the bone $x$. The hierarchy ensures that the transformations of parent bones are applied to the children. The left foot's final transformation is the \textbf{composition} of all of its parents' transformations and its own. Figure \ref{fig:drawing-man} shows the process of drawing every bone of the person from Figure \ref{fig:example-skeleton} -- it's essentially doing a \textbf{depth-first search} through the animation hierarchy.
+
+\textbf{Matrix stacks} were created for this purpose. When going down to a child, \textbf{push} the current transformation matrix. When return to a parent, \textbf{pop} top of the stack to retrieve the parent's transformation matrix.
+
+TODO: figure of transformation stack of drawing man
+
+A \textbf{scene graph} is the general form of the animation hierrarchy. It is a hierarchial description of a scene, which is used to \textbf{optimise rendering} using culling, \textbf{minimise state changes} and perform hierarchial transformations to render such complex animation.
+
+TODO: in-place figure of scene graph
+
+\subsection{Keyframes}
+
+\textbf{Keyframes} are set known poses (transformations) used to define an animation. The transformation for frames in-between keyframes are computed by \textbf{interpolating} from the current keyframe to the next keyframe. A keyframe typically stores:
+\begin{itemize}
+	\item Exact frame number the keyframe is for
+	\item Rotation matrix \textbf{for each bone} of the object
+\end{itemize}
+
+A common way of using keyframes to model entities in the world is to use \textbf{animation cycles}, which are pre-constructed animations (set of keyframes at particular frames) of typical actions. Examples would be running, standing, jumping and kicking for a human character on a game. The same cycles are used for this every time,.
+
+An issue with this is that the animation cycle can \textbf{change at any time}. How you change cycles smoothly, to give a natural appearance? You \textbf{blend} them, by \textbf{interpolating two known rotations}, such as the current keyframe in the current cycle  to \textbf{first keyframe} in the \textbf{new cycle}. When the keyframe has fully moved towards the first keyframe of the new animation cycle, swap to the new animation cycle completely and start playing it.
+
+\textbf{Complex entities}, especially living creatures, tend to use \textbf{skinning}. This still uses keyframes, but instead of just interpolating transformations, you compute the locations of vertices on-the-fly by using \textbf{weights}. Each vertex has a \textbf{weight for each bone}, which determines how much that each bone's transformation/rotation matrix contributes to the vertex's position. For example, to compute a vertex on the should, apply 75\% of the upper arm rotation and 25\% of the lower arm rotation. This requires \textbf{multiple transformation matrices} for each vertex, so it is quite expensive (possible to do in real-time though).
+
+\subsection{Interpolating Rotations}
+
+% USE FIGURE: https://developer.valvesoftware.com/w/images/7/7e/Roll_pitch_yaw.gif
+TODO: ROLL, PITCH, YAW FIGURE
+
+So how do we rotate bones for accurate, smooth \textbf{rotations}? We can use \textbf{Euler angles}, but then we get \textbf{gimbal lock} -- this is where the roll and yaw (see Figure \ref{fig:roll-pitch-yaw}) become \textbf{ambiguous} and the interpolation becomes \textbf{degenerate}. \textbf{Cardan angles} rotate around the $x,y,z$ axes in a \textbf{fixed order}, but then pitch and yaw combined become an equivalent of a roll. So it doesn't really results one may expect (it is unintuitive).
+
+\textbf{Great circle rotation} could be used, as described in Figure \ref{fig:great-circle-rotations}. However, this \textbf{doesn't given roll}, so it is limited.
+
+TODO: in-place figure of great-circle rotation WITH the bullet points, except for last
+
+To summarise, the problems with interpolating rotations are:
+\begin{itemize}
+	\item Euler angles give gimbal lock
+	\item Cardan angles give untuitive interpolation (strange results)
+	\item Great circle rotation doesn't give roll
+	\item Vector and matrix interpolation also fail
+\end{itemize}
+The solution is \textbf{quaternions} (see Section \ref{sec:quaternions}), which given \textbf{homogeneous coordinates for rotations}.
+
+\section{Geometric Intersection Tests}
+\label{sec:intersection-tests}
+
+TODO: lots of the intersection tests on the slides! (collision detection and geometric optimisation)
+
+\paragraph{{1D POINT IN SEGMENT: }} Is $p$ in segment/interval $[x_1,x_2]$? Yes, if $x_1 \leq p \leq x_2$, sot two tests:
+\begin{itemize}
+	\item $x_1 \leq p$
+	\item $p \leq x_2$
+\end{itemize}
+\paragraph{}
+
+\paragraph{{1D SEGMENT-SEGMENT INTERSECTION: }} Does segment $[l_1,h_1]$ intersect segment $[l_2,h_2]$? yes, if:
+\begin{equation}
+\begin{aligned}[b]
+	|m_1 - m_2| \leq r_1 + r_2 \\
+	\text{where:}\\
+	m_1 = \frac{l_1 + h_1}{2} \;\;\;\;\; r_1 = \frac{h_1 - l_1}{2} \\
+	m_2 = \frac{l_2 + h_2}{2} \;\;\;\;\; r_2 = \frac{h_2 - l_2}{2} \\
+\end{aligned}
+\label{eq:1d-segment-segment-test}
+\end{equation}
+What this does is check if the \textbf{distance between the midpoints} of both segments is greater than the sum of radii of the two intervals.
+
+TODO: screenshot of 1D seg-seg
+\paragraph{}
+
+\paragraph{{LINE-LINE INTERSECTION: }}
+\begin{equation}
+	r = q + \frac{\vec{n} \cdot \vec{u}}{\vec{n} \cdot \vec{w}} \vec{w}
+\end{equation}
+where $l_1 = \vec{p} + \vec{v}t_1$ and $l_2 = \vec{q} + \vec{w}t_2$  are the two lines, $\vec{n}$ is the normal of the line $l_1$ and $r$ is the \textbf{point both lines intersect}.
+TODO: figure of line-line intersection with lines labelled and points highlighted
+\paragraph{}
+
+\paragraph{{AAB-AAB INTERSECTION: }} Perform 1D segment-segment test in $x,y,z$ directions for two AABs $b^{(1)}$ and $b^{(2)}$. For example, for the $x$ direction, perform an intersection test with the segments $[x_{min}^{(1)}, [x_{max}^{(1)}]$ and $[x_{min}^{(2)}, [x_{max}^{(2)}]$.
+\paragraph{}
+
+\paragraph{{CIRCLE-CIRCLE INTERSECTION: }} Two circles with midpoints $m_1,m_2$ and radii $r_1,r_2$ intersect if \textbf{distance} between the circles' midpoints is \textbf{less than or equal the sum of their radii}. That is:
+\begin{equation}
+	||m_1 - m_2|| \leq r_1 + r_2
+\label{eq:circle-circle-intersection}
+\end{equation} 
+\paragraph{}
+
+\paragraph{{SPHERE-SPHERE INTERSECTION: }} This is identical to the circle-circle intersection test shown in Equation {eq:circle-circle-intersection}.
+\paragraph{}
+
+\paragraph{{TRIANGLE-TRIANGLE INTERSECTION: }} Let $a$ and $b$ be two 2D triangles with edges $a_1,a_2,a_3$ and $b_1,b_2,b_3$ respectively. If \textit{any} edge of $a$ intersects with an edge of $b$, then the triangles intersect. However, this test fails if \textbf{one of the triangles is inside the other}. To handle this, a different intersection test must be used.
+
+The \textbf{half-plane test} checks which side of a line a point is on. Let $q$ and $r$ be two points on line $l$, and $\vec{n}$ be the normal vector of $l$. We can use the half-plane test to check if a point $r$ is on, to the left of, or to the right of of a line, like so:
+\begin{equation}
+	\begin{vmatrix}
+		1 & 1 & 1 \\
+		p_x & q_x & r_x \\
+		p_y & q_y & r_y
+	\end{vmatrix} = \begin{cases}
+		- & \;\;\;\;\;\; \text{to \textbf{left} of line} \\
+		0 & \;\;\;\;\;\; \text{\textbf{on} line} \\
+		+ & \;\;\;\;\;\; \text{\textbf{right} of line} \\
+	\end{cases}
+	\label{eq:half-plane-test}
+\end{equation}
+where $|X|$ is the \textbf{determinant of matrix \textit{X}}. To check if a point $p$ is inside a triangle with edges $e_1, e_2, e_3$ you simply perform a half-plane test with that point on \textbf{every edge} of the triangle $e_i$.
+
+TODO: half plane test line
+
+TODO: half plane test from  second year notes diagram
+
+Now that we have a way of checking if a point is in a triangle, to check if a triangle intersects with another, we do the following steps:
+\begin{enumerate}
+	\item For each point $p_i$ in triangle $a$
+	\begin{enumerate}
+		\item For each edge $e_i$ in triangle $b$
+		\begin{enumerate}
+			\item Perform \textbf{half-plane test} between $p_i$ and $e_i$
+			\item If $p_i$ is to the \textbf{left} of $e_i$, \textbf{continue to next edge by going back to step (a)}
+			\item If $p_i$ is to the \textbf{right} of $e_i$, $p_i$ is not in triangle $b$. \textbf{Go back to step 1 and check next point of $a$}.
+		\end{enumerate}
+		\item At this point, we know $p_i$ is in triangle $b$, so \textbf{return true} as the triangles \textbf{intersect!}
+	\end{enumerate}
+	\item If true has not been returned yet, no point in triangle $a$ is in $b$. This means the \textbf{triangles do not intersect} and we \textbf{return false}
+\end{enumerate}
+\paragraph{}
+
+\paragraph{{CYLINDER-CYLINDER INTERSECTION: }} First check if the two caps of each cylinder (circles at ends of cylinders) intersect. If so, then perform a \textbf{line segment test} with the line that goes through the $z$ (tube) of the two cylinders (so line-line intersection).
+\paragraph{}
+
+\paragraph{{LINE-SPHERE INTERSECTION: }}Given a sphere whose centre is $q$ with radius $r$ and a line in parametric form $l = s + \vec{v}t$, we find the point of intersection $p$. We can use the \textbf{quadratic equation} for this, where:
+\begin{equation}
+\begin{aligned}[b]
+	A = \vec{v} \cdot \vec{v} \\
+	B = 2 \vec{u} \cdot \vec{v} \\
+	C = \vec{u} \cdot \vec{u} - r^2
+\end{aligned}
+\end{equation}
+First ,we compute the \textbf{discriminant} $d = \sqrt{B^2 - 4AC}$. If $d = 0$, there are no roots and the line does not intersect the sphere. If $d = 1$, then the line \textit{just} touches the sphere. If $d = 2$, there are \textbf{two roots} which means \textbf{two points of intersection}. We find the point of intersection by first finding \textit{where} along the line the point is (calculating $t$), then plugging $t$ into the line's parametric form:
+\begin{equation}
+\begin{aligned}[b]
+	t = \frac{-B \pm \sqrt{B^2 - 4AC}}{2A} \\
+	p = s + \vec{v}t
+	\label{eq:line-sphere-intersection}
+\end{aligned}
+\end{equation}
+where $s + \vec{v}t$ is the parametric line and $p$ is the point of intersection we're looking for (use "+" and - to get both points. Otherwise, to get the \textit{closest} point use "-").
+\paragraph{}
+
+\section{Interaction}
+
+How do you \textbf{interact} with a 3D world? Due to hardware constraints, most interaction is 2D with the keyboard and the mouse. The mouse has two degrees of freedom, so you can only control 2 d.o.f. The keyboard actually has more (10 fingers, so 10 d.o.f), but it is quite awkward to coordinate unless you only allow one thing at once. This means \textbf{modes} are heavily relied upon, where different interactions are performed depending on the keys (e.g. Ctrl+T is translating object, Ctrl+R is rotating, etc.).
+
+There is some 3D hardware which provide 3D rotation and movement (e.g. Wiimote), but it is expensive and awkward to code for. You also have to map the \textbf{semantics} -- what do the control inputs actually \textit{mean}. What does rotating the Wiimote 30 degrees to left actually do?
+
+There are major semantics for 3D interaction:
+\begin{itemize}
+	\item \textbf{Virtual Worlds} -- games, flythroughs, films and so on. We want to track the position and orientation of the eye
+	\item \textbf{Object Modelling and Display} -- \textbf{interactive manipulation} of objects (e.g. 3D modelling programs, drag and drop and so on)
+\end{itemize}
+
+For virtual world interaction, the user primarily controls the viewpoint. That is, where the camera is and which way it is looking. What you can see is limited by a field of view. \textbf{Rapid shifts of attention}a re typically not possible, you have to \textbf{travel to the desired part of the scene}. You can't suddenly teleport there (usually), as that would break the illusion of the virtual world.
+
+Object modelling and display is where there are objects visible and the user wants to \textbf{modify it} for processing. We use existing \textbf{select and modify} semantics. The user \textbf{chooses} and object and then \textbf{applies operations to currently selected object}. So how do you select an object? In 2D it was simple -- you choose whatever object is currently under the mouse (i.e. which object mountains mouse's currently $(x, y$) coordinates).
+
+In 3D, we have to consider the $z$ coordinate and the situation where two objects overlap and are both under the mouse's $(x, y)$ position. We can just choose the \textbf{closest object} to the user. That is, the frontmost object -- the first objecft in the kine of sight. This is known was \textbf{3D picking}. This can be achieved in three ways:
+\begin{itemize}
+	\item \textbf{Geometric Intersection Tests} -- create ray that shoots through clicked pixel and test intersection on all objects. Select closest object.
+	\item \textbf{OpenGL Pick Render Mode} -- not really used any more and deprecated
+	\item \textbf{Backbuffer Hack} -- standard approach to 3D picking, which is described below
+\end{itemize}
+The \textbf{backbuffer picking hack} is a fast way of selecting objects. When the user clicks on the screen, do the following:
+\begin{enumerate}
+	\item Turn off lighting
+	\item Create a \textbf{one-to-one mapping} of colours to objects (each colour must be unique, one colour for one object)
+	\item \textbf{Render} each object in their colour 
+	\item Retrieve pixel of rendered image under mouse pointer
+	\item Look up that pixel's colour in index to find \textbf{selected object}
+\end{enumerate}
+Because you're just rendering the image again, the \textbf{depth buffer} will sort of which object is the closet for you! This is a fast way of finding out which object was selected, but map be quite slow if you have a lot of complex objects with highly detailed geometry (as you do have to perform a whole render).
+
+\section{Physics and Particles}
+
+In order to run \textbf{physics simulations} within a graphical application, we can use \textbf{Euler integration}. This means we keep track of the time $t$ of the simulation and take a single \textbf{timestep}  for each frame. A length of a timestep is defined as $Delta t$.  Therefore, to compute the position of an object moving in direction $\vec{v}$ in the frame $i+1$, we use the \textbf{position of the previous frame} $i$ like so:
+\begin{equation}
+	p_{i+1} = p_i + \vec{v} \Delta t + error
+	\label{eq:euler-integration}
+\end{equation}
+where $error$ is the \textbf{error} of the simulation. This \textbf{cascades} because frames are computed from the previous one, making the error $O(\Delta ^2)$. $\Delta t$ must therefore be quite small. This means the $n$th frame has $n$ computations. if the error is $0.01\%$ per frame, then after 1000 frames we could be out by $(1.0001)^{10000} - 1.00 = 2.717 - 1.000 = 1.717 = 172\%$. This usually doesn't matter if the results look realistic enough (this isn't scientific computing where the results must be accurate, they just have to \textit{appear} accurate).
+
+\textbf{Particle systems} model phenomena that don't have surfaces, so they cannot be modelled using geometry in the usual ways. Examples of such phenomena include:
+\begin{itemize}
+	\item fire, smoke, fog, fireworks
+	\item trees (sometimes), grass
+	\item rain, sleet, hail, snow
+	\item liquids (sometimes)
+\end{itemize}
+
+A particle system is a collection of particles that \textbf{evolve over time} and are governed by deterministic physics and probabilistic evolution rules. Typically these are rendered with \textbf{point primitives} (i.e. small quads). All particles:
+\begin{itemize}
+	\item are born (\textbf{creation})
+	\item live (\textbf{evolution})
+	\item die (\textbf{extinction})
+\end{itemize}
+
+An example of a particle system is \textbf{fireworks}. Particles shoot up from the ground, a random number of them with random timing. These single particles launch from ground with a randomised velocity vector -- the movement of them following \textbf{ballistic behaviour}. They explode at a fixed time and \textbf{die} immediately after. New partiles are born in the explosion, which \textbf{inherit} the parent's colour and physics. A random \textbf{direction vector} is added (e.g. Monte Carlo distribution) and die a fixed time period later.
+
+Particle systems can be modelled from \textbf{finite state machines (FSMs)}. Figure \ref{fig:particle-fsm} shows a finite state machine diagram of the fireworks example.
+
+TODO: FSM diagram
+
+\section{Natural Phenomena (Terrain and Plants)}
+
+\subsection{Digital Elevated Models and Heightmaps}
+
+There are few holes in the Earth, except for caves, overhangs and so on, which are typically modelled separately. This means we represent terrain as a \textbf{heightfield}. For every $(x, y)$ position we have on value of $z$. \textbf{Altitude}, or the height of a point on the terrain, is a function of $(x, y)$, $f(x, y) = z$ (or latitude and longitude).
+
+A \textbf{digital elevation model (DEM)} is a \textbf{regular grid} of measure heights, often from satellite scans. Because DEMs are regular grids, they have squares. We usually \textit{triangulate} the mesh by splitting these squares into two triangles each. This typically results in \textbf{massive} amounts of triangles, which can be computationally expensive to render.
+
+TODO: DEM figure
+
+A DEM can be stored in a \textbf{greyscale image}. The $i,j$ indices of the DEM are the $x,y$ coordinates of the image and the height of a point is the \textbf{intensity} of the pixel (white = max height, 0 = min height). This means you can \textbf{design} terrain visually in a paint program.
+
+Problems with terrain include:
+\begin{itemize}
+	\item Dividing into triangles distorts the landscape (but we need to simplify in some way to render it)
+	\item All terrain representations are \textbf{huge}, so \textbf{optimisation} is need bot computationally and in terms of memory
+	\item Collision detection can be a pain
+\end{itemize}
+
+\subsection{Terrain Normals}
+
+Constructing the geometry itself is simple, but how do we light terrain? How do we compute a terrain's \textbf{normals}? There are three approaches:
+\begin{enumerate}
+	\item use \textbf{flat} normals (one normal per triangle)
+	\item \textbf{average} normals of (six) adjacent faces
+	\item use \textbf{analytic} normals
+	\item approximate via derivatives -- \textbf{central differencing}
+\end{enumerate}
+
+Approach 1 is easy to compute, but produces very unnatural looking results and makes the triangular approximation of the terrain very apparent. Approach 2 is effective if the terrain is \textbf{relatively smooth}, but large cliffs doesn't look quite as good.
+
+Approach 3 uses analytic normals, which are normals \textbf{approximated using the height function} $f(x, y)$. They're derived from independent surface vectors. The normal vector computed is based on the \textbf{gradient}. Essentially, this uses \textbf{steepest gradient descent}. The normals are computed like so:
+\begin{equation}
+\begin{aligned}[b]
+	\vec{v}_x = \left( 1, 0, \frac{\delta f}{\delta x} \right)
+	\;\;\;\;\;
+	\vec{v}_y = \left( 0, 1, \frac{\delta f}{\delta y} \right)
+	\\
+	\vec{n} = \vec{v}_x \times \vec{v}_y =
+	\left( -\frac{\delta f}{\delta x}, \frac{\delta f}{\delta y}, 1 \right)
+	= (-\vec{\bigtriangledown} f, 1)
+\end{aligned}
+	\label{eq:analytical-normals}
+\end{equation}
+
+Figure \ref{fig:analytical-normals} shows how terrain surface function itself, as well as the $x$ and $y$ \textbf{tangent vectors} $\vec{v}_x$ and $\vec{v}_y$. These are used to compute the final normal.
+
+Approach 4 uses \textbf{central differencing} to approximate the gradient. It gives good looking results and is fast to compute. Given a point on the discretised terrain grid, $(x_i, y_j)$, the corresponding vertex's normal is:
+\begin{equation}
+\begin{aligned}[b]
+	-\vec{\bigtriangledown} f \approx \left(
+		\frac{f(x_{i+1}, y_{j}) - f(x_{i-1}, y_{j})}{2},
+		\frac{f(x_{i}, y_{j+1}) - f(x_{i}, y_{j-1})}{2}
+	\right)
+	\\
+	\vec{n} \approx \left(
+		\frac{f(x_{i+1}, y_{j}) - f(x_{i-1}, y_{j})}{2},
+		\frac{f(x_{i}, y_{j+1}) - f(x_{i}, y_{j-1})}{2},
+		1
+	\right)
+\end{aligned}
+\label{eq:central-differencing}
+\end{equation}
+Notice how this \textbf{doesn't use the height at the point iself}. $f(x_i, y_j)$ is never used, only the four surrounding neighbours are! One of way of dealing with boundary points is just use the boundary point's height for the missing heights (e.g. $f(x_1, y_1)$ uses $f(x_1, y_1)$ for $f(x_{i-1}, y_{j})$ and $f(x_{i}, y_{j-1})$.
+
+\subsection{Colouring/Texturing Terrain}
+
+The terrain at the moment has no colour. In real life, the exact colour of terrain is constantly varying,l based on the objects on the terrain (grass, rocks, etc.) which correlate to particular regions and heights . We can try and approximate this by having the terrain's colour only \textbf{vary with height}.
+
+A simple way is to just set the colour based on \textbf{height intervals}:
+\begin{enumerate}
+	\item 0 = blue (water)
+	\item low = green (fertile areas)
+	\item medium = brown (hills)
+	\item high = grey (mountains)
+	\item extreme = white (snow)
+\end{enumerate}
+You can do the same thing with \textbf{textures} -- certain height intervals use particular textures.
+
+In order to prevent abrupt changes in colours/textures, you need to \textbf{interpolate}. So yo interpolate colours from one region to the next to maintain smooth blending. This prevents abrupt, visible edges of textures. You can also use \textbf{1D texture} and use height $f(x, y)$ as the texture coordinate.
+
+\paragraph{\textbf{NOTE: }}A 1D texture is a texture whose texture image is $w \times 1$ in size, where $w$ is the width (or size) of the texture.
+\paragraph{}
+
+\subsection{Contours}
+
+\textbf{Contours} represent boundaries between different isovalues and are good when boundaries are desired. Multiple contours can give an overview of the entire data set in 3D, unlike surface rendering, since it allows the viewer to see through the surface and view the values/heights/contours behind it. Take a look at the graph in Figure \ref{fig:3d-contours} – notice how the surface is actually see through?
+
+TODO: 3D surface contour figure
+
+Contour lines are \textbf{slices of data}. Let $f(x, y) = h$ be the function which determines the value $h$ of the data item at point $(x, y)$ (or the value of entry $i,hj$ of a matrix). Then $f^{-1}(h) = \lbrace (x, y) : f(x, y) = h \rbrace$. That is, if you input $h$ into $f^{-1}(h)$ then you receive back \textbf{all the data points which have a value of $h$}. Multiple contour lines can be shown, one for each value of $h$.
+
+\paragraph{\textbf{NOTE: }} A possible value $h$ in the dataset is also known as an isovalue.
+\paragraph{}
+
+The contour map in Figure \ref{fig:contour-map} illustrates how each value of $h$ has its own set of lines that represent the boundary that those h-values make. To make a contour, you:
+\begin{enumerate}
+	\item Pick a height ($h$ value)
+	\item Look at every $(x, y)$ position possible and store the ones where. That is, store the points in the set.
+	\item Make lines/curves between adjacent pairs of the chosen points
+\end{enumerate}
+
+So how do we extract contours from a dataset (e.g. matrix) to draw them for visualisation/analysis? Well, we have a polygonal mesh (the grid of values split up into triangles), so we can just use divide and conquer. We iterate through each cell, find the contour in the cell and then combine the results.
+
+This is known as the \textbf{Marching Triangles} approach, as we “march”, or iterate, through all of the triangles in the mesh. Let h be the height of the contour we are trying to calculate. Then for each cell:
+
+We have three vertices. Each vertex is either \textbf{black} (value at vertex > $h$) or \textbf{white} (value < $h$). An edge with both a black and a white endpoint \textbf{intersect} the contour (since one end < $h$ and the other end > $h$, so interpolating through the edge we must get to a point where we hit $h$). As shown in Figure \ref{fig:marching-triangles-individual-cell}, we're trying to find the point on the line where the height = $h$.
+
+TODO: individual cell marching triangles
+
+To find this point, we could \textbf{linearly interpolate} between $a$ and $b$ until we hit a value $x$ where $f(x) = h$. This takes a bit too long however. Since:
+\begin{itemize}
+	\item At $a$, we know the function is
+	\item At $b$, we know the function is
+	\item At $x $(the point on the line we're trying to find), we know it is $h$.
+\end{itemize}
+If we assume the distance from points $a$ to $b$ is 1, we can just the following formula to find $x$:
+\begin{equation}
+	x = a \frac{h - f(a)}{f(b) - (a)} + b \frac{f(b) - h}{f(b) - f(a)}
+	\label{eq:marching-triangles-interpolate}
+\end{equation}
+This is another form of \textbf{linear interpolation}.
+
+TODO: figure of different cases
+
+We have three vertices which can be one of two possible colours; therefore there are $2^3$ combinations of black/white vertices a triangle can have, which means we have to take into account eight cases. However, many of these cases are just rotated versions of others. Therefore, there are \textbf{four basic cases}.
+
+In case 0 and case 0C, there are no black-white edges, so we don't need to do anything. In the other two cases (1 and 1C), there are two black-white edges. We interpolate on both, finding $x$ on both lines and use those two computed values as the end points of the contour line.
+
+There a \textbf{texture hack} that allows you render the contours of a heightfield much faster. Use a \textbf{1D texture} (or colour map) based on altitude, and set intervals of the map (e.g. 100m, 200m, etc.) to be black. Set all other values to white. The contours will show up on the surface, or on a 2D image you set $z = 0$.
+
+\subsection{Fractal Terrain}
+
+\textbf{Fractal terrain} can be used to generate random terrain. It's a very powerful technique that can generate natural looking images. Given some initial \textbf{triangular mesh} to work with, each triangle (or perhaps just triangles chosen at random) has its \textbf{edges subdivided} using \textbf{linear interpolation}. This produces many more sub-triangles and points, which are \textbf{perturbed randomly}. In other words, the new points produced for sub-dividing triangles have a random amount added to their position (with varying parameters $\alpha,\beta$). For square meshes, you'll need to use \textbf{bilinear interpolation} to generate good results.
+
+TODO: figure of subdivided triangle
+
+\subsection{L-Systems and Growth Patterns}
+
+Plants and trees are part of the natural environment. They are geometrically complex and created in one of three ways:
+\begin{itemize}
+	\item by hand (geometric)
+	\item described by \textbf{L-systems}
+	\item simplified using \textbf{textured billboards}
+\end{itemize}
+
+\textbf{Lindenmayer systems} are parallel \textbf{grammars} describing the growth of natural things. We compress the geometry of plants into L-system grammars and then apply those rules to retrieve the geometry to render. It's one of the most common ways people construct plants.
+
+Plants can grow forward, rotate and branch. This grow is performed in a \textbf{hierarchy} which starts from the \textbf{root}. L-systems are stated as a list of \textbf{production rules} that correspond to stages of growth. Each part of the plant grows, but according a \textbf{fixed pattern} specified by the grammar. Consider the following grammar:
+\begin{equation}
+\begin{aligned}[b]
+	Trunk \;\; : \;\; F[+60Branch][-60Branch] \\
+	Branch \;\; : \;\; F[-30Branch][+30Twig] \\
+	Twig \;\; : \;\; F \\
+\end{aligned}
+\label{eq:l-system-grammar}
+\end{equation}
+where $Branch,Trunk,Twig$ are all symbols, $F$ means \textbf{move forward} (i.e .grow), $[$ start split by pushing state, $]$ end split by popping state, $+x$ rotate $x$ degrees clockwise. This converts easily to recursive code:
+\begin{itemize}
+	\item branch -- a function
+	\item F -- render, then translate in $y$
+	\item $[$ -- \texttt{glPushMatrix()}
+	\item $]$ -- \texttt{glPopMatrix()}
+	\item $+x$ -- \texttt{glRotate()}
+\end{itemize}
+
+Figure \ref{fig:example-l-system} shows this grammar being evaluated to construct a tree. The root starts with a $Trunk$ part, which is evaluated at step 1 to produce a small drunk and produce two children (branches). Notice how in step 2, as the two branches are evaluated, the \textbf{trunk is evaluated again}. After evaluating a rule, it's still evaluated more until a \textbf{maximum depth} $d$ has been reached.
+
+TODO: example l-system
+
+If no maximum is imposed, then it 
+
+L-systems can be used for 3D trees and not just 2D:
+\begin{itemize}
+	\item $F(s)$ -- move $s$ units forward and draw
+	\item $f(s)$ -- move $s$, do not draw
+	\item $+,- \theta$ -- rotate $\theta$ around \textbf{up vector}
+	\item $\&,\% \theta$ -- rotate $\theta$ around \textbf{left vector}
+	\item $/,\ \theta$ -- rotate $\theta$ around \textbf{forward vector}
+	\item $[,]$ -- push/pop state
+\end{itemize}
+an example tree generated from such a system is shown in Figure \ref{fig:3d-l-system-tree}.
+
+TODO: 3D single tree example
+
+\textbf{Randomised parameters}, such as random lengths, angles and even choice of rules (based on probability model) are all possible to product less uniform, more natural looking trees. You can each take \textbf{environmental factors} into consideration, such as competition for light, space and food. If you use randomised parameters, you \textbf{must store the seed} used by the pseudo-random number generator. If you don't, you won't be able to re-produce that exact tree (as the next generated tree is randomly generated so it'll be different).
+
+L-systems are \textbf{procedurally generated models} that are good for highly-structured objects. They're a good way of modelling general construction rules.
+
+\subsection{Billboards}
+
+\textbf{Billboarding} is the use of 2D sprites in a 3D environment. In the same way that a billboard is positioned to face drivers on a highway, the 3D sprite always faces the camera. A \textbf{billboard} is essentially a texture mapped polygon, which always faces the viewer. They are 2D images on surfaces which arte \textbf{always facing the camera/eye}.
+
+TODO: in-place figure of billboard
+
+TODO: in-place example of DOOM
+
+There is both a performance advantage and an aesthetic advantage to using billboarding. Most 3D rendering engines can process "3D sprites" much faster than other types of 3D objects. So it is possible to gain an overall performance improvement by substituting sprites for some objects that might normally be modelled using \textbf{texture mapped polygons}. Aesthetically sprites are sometimes desirable because it can be difficult for polygons to realistically reproduce phenomena such as fire. In such situations, sprites provide a more attractive illusion.
+
+2D images are rectangular. This means a rectangular polygon (two triangles) is required to represent the 2D image in the 3D scene. Since most objects are \textit{not} rectangular, we need a way of showing a non-rectangular image on a rectangular surface (polygon). This is why billboards generally use \textbf{transparency}, as shown in Figure \ref{fig:transparent-billboard}. This means special care must be taken to render these objects to avoid problems with the depth buffer (render all transparency objects \textbf{after opaque objects}, in order of furthest to closest!)
+
+% http://www.computer-graphics.se/TSBK07-files/pdf13/8c.pdf
+TODO: transparency with guy illustration
+
+There are four variants of billboards:
+\begin{itemize}
+	\item \textbf{View Plane Orientated} -- simply \textbf{zero out rotation} of each billboard so they're all directing facing the eye (i.e. all parallel to viewing plane) (see Figure \ref{fig:viewplane-billboarding})
+	\item \textbf{Axial} -- rotate all billboards \textbf{around Y-axis}, such that they're all facing the eye (see Figure \ref{fig:axial-billboarding}). This is much more suitable for some objects, such as trees, where it doesn't face sense to have the tree rotated such that it's facing \textbf{upwards} towards eye above
+	\item \textbf{Full 3D Orientated Viewpoint} -- direction billboard is facing is given by the normalised $\vec{dir} = \vec{forward} \times \vec{up}$ where $\vec{forward}$ is the forward $z$-vector of the camera and $\vec{up}$ is some up vector (typically the $y$-axis $(0, 1, 0)$). This \textbf{changes the base} of each billboard.
+	\item \textbf{World Orientated billboard} -- there is no camera dependant rotation. The billboards are in a fixed orientation and never change (so if you were to move to the side of them, you would see the flatness!).
+\end{itemize}
+
+\begin{table}[H]
+	\centering
+	\begin{tabular}{|r|c|c|}
+		\hline
+		& \textbf{Non-Axial} & \textbf{Axial} \\
+		\hline
+		\textbf{Viewpoint Orientated} & Construct basis & Clear rotations \\	
+		\textbf{View Plane Orientated} & Construct basis based on view plane & Construct axial rotation \\
+		\hline
+	\end{tabular}
+	\caption{Table Describing How to Perform Different Billboarding Types}
+	\label{eq:billboard-types}
+\end{table}
+
+TODO: view plane figure in slides
+
+TODO: axial in slides
+
+TODO: WORLD ORIENTATED IN SLIDES
+
+TODO: a little bit on it
+
+TODO: in-place figure of 2-3 billboarding!
+
+\section{Optimisation and Organisation}
+
+TODO: fill structure in after reading slides
+
+\section{Geometric Optimisation}
+
+To boost rendering times, we want to make we're \textbf{not rendering what we don't have to}. If things are out of view, why render them? If the user isn't going to notice the reduce detail in a object far away, why add detail to it? In a nutshell, \textbf{geometric optimisation}:
+\begin{itemize}
+	\item \textbf{clips} objects outside field of view
+	\item \textbf{culls} objects occluded (i.e. are inside/behind other objects)
+	\item \textbf{simplifies} unimportant geometry
+	\item \textbf{applies discrete} level-of-detail
+	\item \textbf{applies continuous} multiresolution
+\end{itemize}
+
+\subsection{Bounding Primitives}
+
+TODO: AABBs, bounding spheres, why they're used
+
+TODO: add some intersection tests using bounding primitives to the Intersection tests section
+
+\subsection{Clipping}
+
+A common way to clip objects is to just discard geometry \textbf{outside} view frustum modify geometry \textbf{intersecting} the frustum (so only triangles inside frustum are drawn) and keep geometry \textbf{inside} the frustum. A frustum is defined by \textbf{six planes}, so we can use \textbf{point-segment} intersection tests to check if a point/triangle is inside.
+
+Clipping occurs automatically in the graphics pipeline (e.g. in OpenGL), but the bottleneck is often in \textbf{geometry processing on the GPU itself}, because it's done per triangle and it means we're sending data to the video card. Can we avoid sending the geometry at all? Yes, we do can it \textbf{algorithmically} on the CPU. However, it is makes more work for the programmer.
+
+One of way of performing manual clipping is to do it \textbf{per-object}. Instead of individual triangles being clipped, we perform the clipping on the entire object. If an object \textbf{does not intersect} with the view frustum, clip it! This can be doing using plane-bounding volume (e.g. AABBs) intersection tests. Note that you should use \textbf{conservative tests} and give false positives, but not false negatives. This means an object will always be drawn if it's visible and may be drawn if it's not, which has a slight performance hit but at least the user doesn't notice.
+
+This also helps with \textbf{partial intersections}, where only a part of an object is visible. Rather than worry about if it'll be drawn or not, or having to modify the geometry so only part of it is rendered, we just draw all of it. Some of it is a bit redundant, but overall it is convenient for the programmer and still has performance gains.
+
+\subsubsection{Quadtrees and Octrees}
+
+Performing clipping on \textbf{terrain} increases the performance greatly, as there may be a lot of redundant, unseen triangles that are rendered. One way of doing this in 2D is:
+\begin{enumerate}
+	\item break terrain into square blocks (or bins)
+	\item test each bin for clipping\textbf{separately}, using \textbf{polygon intersection test}
+	\item if bin intersects view region, render it
+	\item otherwise, clip/discard bin geometry
+\end{enumerate}
+Figure \ref{fig:terrain-2d-clipping} shows how a specific bin (whose central point is $p$) is rendered, since it intersects with the view region $V$.
+
+Intersection tests with \textbf{spheres} tend to be \textbf{faster}, so rather than use the polygon intersection test, we can \textbf{bound} a square bin in its \textbf{circumscribing circle}, as shown in Figure \ref{fig:bounding-circle-clipping}. Then, if we expand the view region $V$ to a slightly larger region $V_r$, we can perform an equivalent clipping procedure which is faster:
+\begin{enumerate}
+	\item Compute expanded view region $V_r$
+	\item For each bin:
+	\begin{enumerate}
+		\item create circumscribing circle for bin
+		\item test centre of circle inside $V_r$
+		\item If inside, \textbf{render}. If not, \textbf{discard}
+	\end{enumerate}
+\end{enumerate}
+
+TODO: 2D terrain clipping
+TODO: bounding circle w/ squares
+
+TODO: concepts of them
+
+This can be generalised to the 3D. Let $\Pi_1, \Pi_2, ..., \Pi_3$ be the planes that define the frustum. Let a bin be defined as a sphere whose central point is $p$. If $d(p, \Pi_i) < 0$, $p$ is inside $\Pi_i$. If $d(p, \Pi_i) < r$, the sphere \textbf{intersects} with $\Pi_i$. Checking both cases for each of the six planes is enough to determine if you should render the region or not.
+
+TODO: in-place figure of 3D frustum
+
+Bins can also be defined \textbf{recursively}. If bin $a$ has four children $b, c, d, e$, then determining if $e$ should be rendered means you do two intersection tests -- one for its parent $a$ and one for $e$. If $a$ should not be rendered, then do yuo don't need to perform the check of its four children. This creates a \textbf{tree structure} that has the ability to discard large amounts of regions with a single test.
+
+In 2D, this is known as the \textbf{quadtree} algorithm. A quadtree splits a region into four sub-regions, then those four regions can be split into another four each. A quadtree of depth $d$ has $4^d + 1$ regions (nodes). This structure ensures a region $r$ is \textit{always} a child of a larger region that $r$ is \textbf{completely contained in}. If a node $v$ does not intersect with the frustum, then \textbf{none of its children are checked} because of the meaning of the parent-child relationship. Figure \ref{fig:quadtree} shows the tree structure produced -- every node is either a leaf or has four children, and we always start with a single route. Figure \ref{fig:quadtree-clipping} shows the recursive intersection process as the scene is clipped -- it burrows down to smaller regions (children) in regions the viewing plane has intersected with.
+
+% http://www.eecs.berkeley.edu/~demmel/cs267/lecture26/Quadtree2.gif
+TODO: quadtree figure
+
+TODO: quadtree with clipping from slides
+
+\textbf{Octrees} are the 3D equivalent of quadtrees, which break cubes into 8 sub-cubes. Octrees should only be used for fully 3D situations, such as a flight simulator or visualisation problems. Otherwise, the 2D quadtree should be chosen as it is \textbf{faster and easier}.
+
+Quadtrees and octrees are efficient and easy to code recursively. They work very well for terrain, because terrain geometry/vertices are \textbf{distributed evenly across space}. They are less good for arbitrary objects, which have an \textbf{uneven distribution of points}.
+
+TODO: uneven distribution figure in-place
+
+\subsubsection{$kd$-Trees and BSP Trees}
+
+\textbf{$kd$-Trees} can be produce \textbf{variable bin sizes}, which is good for uneven distributions of data. More depth/smaller regions are given in places where there are many points. Sparse areas are covered by less regions, in order to \textbf{maximise the amount of points discarded} in a single intersection test. The $kd$-tree partition of the scene from the previous section is shown in Figure \ref{fig:kd-tree-partition}.
+
+TODO: kd tree partition
+
+$kd$-trees work in any number of dimensions $d$ and are better for uneven distributions. It However, it is still \textbf{inefficient for diagonal views}, so can we generalise further? Yes, with the BSP tree.
+
+\textbf{Binary Space Partition (BSP)} trees are $kd$-trees but with \textbf{arbitrary lines}. They are \textbf{always pre-computed} as computing these lines is an NP-hard problem. They are \textbf{efficient}, but more expensive to initially compute. This makes them more for dynamically generated scenes and scenes which vary a lot, as you \textbf{won't be able to compute the BSP tree on the fly}. If you have dynamic, changing data with many different distributions/orientations, a quadtree/octree/$kd$-tree may be better.
+
+TODO: BSP figure
+
+\subsection{Culling}
+
+\textbf{Culling} is a visibility problem. What objects can I see? 
+
+\textbf{Visibility maps} define geometric regions which determine which objects are occluded if the \textbf{camera was to be placed in that region}. Consider Figure \ref{fig:visiblity-maps}. Here, if the camera is placed in the "$B$ blocks $A$ region, when the we know that the camera will never see $A$, so we cull it and don't bother rendering.
+
+In order to make these regions represent the occlusion of objects fully and accurately, we need up to $n(n-1) \in O(n^2)$ regions, where $n$ is the number of objects. That is, each object $A$ can have $n - 1$ regions, one for each object in $B$ from the other $n - 1$ objects, that describe the region of space that would cause $A$ to occlude $B$ if the \textbf{camera is in the region}.
+
+Because there are a total of $O(n^2)$ regions to both compute (pre-load) and perform intersection tests on (every frame!), this is a very expensive approach.
+
+\subsubsection{Cell Portal Graphs}
+
+Consider the \textbf{interior scene} shown in Figure \ref{fig:interior-scene}. It consists of multiple rooms, where you can't see anything outside the room except for the rooms you can see through the \textbf{windows}. From this, we can construct a table that lists which rooms you can from other rooms (Table \ref{tab:cell-portal-graph}).
+
+TODO: interior scene 
+
+\begin{table}
+	\centering
+	\begin{tabular}{|c|c|c|c|c|c|c|c|}
+		\hline
+		& A & B & C & D & E & F & G \\
+		\hline
+		A & x & x & x & x & x & x & x \\
+		B & x & & & & x & x & x \\
+		C & x & & & & x & x & x \\
+		D & x & & & & x & x & x \\
+		E & x & x & x & x & x & x & x \\
+		F & x & x & x & x & x & & \\						
+		G & x & x & x & x & x & & \\		
+		\hline
+	\end{tabular}
+	\caption{Which rooms you can see (columns) when inside a given room (rows)}
+	\label{tab:cell-portal-graph}
+\end{table}
+
+Using the table, it is possible to construct a \textbf{Cell-Portal Graph} like the one in Figure \ref{fig:cell-portal-graph}. If the camera is in room/region/node A\textbf{Pre-computing} a visibility like this can cull large amounts of geometry and objects, especially in \textbf{enclosed environments} like a building.
+
+\paragraph{\textbf{NOTE: }} Conservative visibility maps are always better, as you don't ant to draw a room that it turns out the user was actually supposed to be able to see from another.
+
+TODO: cell-portal graph
+
+\subsection{Simplification (Geometry)}
+
+Even fast video cards are limited. What do we do when they're too slow? We make them do less. To do this, we \textbf{simplify the models of the scene's objects}. We especially do this to complex objects that are far way from the camera (in the background), as they require less detail.
+
+Consider a \textbf{geometric tree} with 45,000 triangles being rendered on a $512 \times 512$ image. This means we're using approximately 90,000 pixels for the tree, or \textbf{2 pixels per triangle}.  And this is when the tree is nearby and has only a few leaves! If the tree is twice as far, there is only \textbf{0.5 pixels per triangle}. Each triangle uses approximately 100 bytes of data, so roughly 100 bytes per pixel. However, only 3 bytes is shown (RGB colour). The \textbf{redundancy} here is clear; we don't need this many triangles and this level of detail for an image of this resolution, especially considering the distance the tree is at (not an extreme close-up).
+
+\textbf{Level of detail} draws objects depending on their distance. Nearby objects should be high detail and distant object should be in low detail. That is, we want \textbf{several models for each obnject}. This is not built-in to OpenGL, so it is up to the programmer. For example, to have a LOD sphere, we do this:
+\begin{enumerate}
+	\item if distance > 25, render low detail sphere
+	\item else if distance > 5, render medium detail sphere
+	\item else, render high detail sphere
+\end{enumerate}
+We have a \textbf{discrete, pre-defined} set of objects for different distances. This is cheap and convenient, but it means 
+
+% http://www.opensg.org/projects/opensg/attachment/wiki/Tutorial/OpenSG1/NodeCores/lod.png
+TODO: LOD figure in-place
+
+\textbf{Multiresolution} computes the level of detail of an object \textbf{on-the-fly}, using some function of distance. Instead of a series of \texttt{if} statements, it uses a formula of distance to compute the detail and the generates a mesh with the desired detail. You can also apply lower and upper bounds on detail to prevent extremely low or high detail meshes.
+
+\textbf{Terrain can be simplified too}, by rendering low-resolution blocks as two triangles. If a particular region/block is far enough away (i.e. small enough), it is rendered using two blocks instead of doing the normal recursive render to all the sub-regions within the block (based on quadtree culling). Problems occur at the \textbf{boundaries} of simplified blocks and non-simplified blocks. The edges might not match up, due to \textbf{mis-matching heights} caused by the simplification. This means you need to check the neighbours of simplified regions and ensure their edges match up with the simplified regions (or vice versa).
+
+\subsection{Simplification (Texture)}
+
+Simplification can be performed on \textbf{textures} as well. We use textures because we're cheaper than geometry. We could render close objects in \textbf{geometric detail}, but render distance objects using textures.
+
+\textbf{Mipmaps} is short for "multum in parvum maps", which means \textbf{many in a small place}. It solves a problem where \textbf{linear interpolation} of texture filtering fails for certain textures far in the distance. This is because \textbf{point sampling} is used, which is more sparse as the texture is far from the eye (shown in Figure \ref{fig:sampling-issues}). What we really should be doing is \textbf{integrating light over the whole patch} between one sampling point and another, as shown in \ref{fig:light-over-patches}.
+
+Therefore, multiple texture images are generated for a single texture, each for a \textbf{different level of detail}. Level 0 is the original texture, level 1 is half the resolution of level 0, level 2 is half the resolution of level 1, etc. Each level is \textbf{half the resolution of the last}. When scaling down, blurring may be performed for smooth results.
+
+Boundaries between two levels of textures make users notice the level changes, so we \textbf{interpolate between levels}, using the distance from the eye. This is \textbf{trilinear texture interpolation}.
+
+TODO: two sampling figure
+TODO: patch figure
+
+\section{Collision Detection}
+
+A collision is when two objects try to occupy the same space. In our case, this means when \textbf{geometric objects intersect}. If we assume they are not already in the same space, then detecting collisions is a matter of \textbf{detecting the first intersection}.
+
+The general algorithm for detecting collisions of objects in the world is:
+\begin{algorithmic}[1]
+\FOR {$o_1 \in objects$}
+	\FOR {$o_2 \in (objects \setminus \lbrace o_1 \rbrace)$}
+		\IF {$o_1$.intersect($o_2$)}
+			\STATE \textit{// Collision occurred! Handled it!}
+			\STATE $o_1$.collisionResponse($o_2$)
+		\ELSE
+			\STATE \textit{// No collision occurred.}
+		\ENDIF
+	\ENDFOR
+\ENDFOR
+\end{algorithmic}
+
+This algorithmic is very expensive, as it runs in $O(n^2)$ time. \textbf{Heavy optimisation} is needed to reduce the number of intersection tests performed and to increase the speed of said intersection tests. Intersection tests for a variety of different shapes in 1D, 2D and 3D are given in Section \ref{sec:intersection-tests}.
+
+\subsection{Backbuffer Hack}
+
+The \textbf{backbuffer hack} is a way of performing very fast intersection tests in 2D. To check if two objects $o_1$ and $o_2$ have intersected, regardless of their shape, do the following:
+\begin{itemize}
+	\item Start with black image
+	\item Render $o_1$ in red, with alpha transparency
+	\item Render $o_2$ in blue, with alpha transparency
+	\item Check all pixels, if one is purple then there is an \textbf{intersection!}
+\end{itemize}
+If \textbf{pixel-perfect} collision detection is required, this is a very good technique. It can be generalised to multiple objects, by simply using the general $O(n^2)$ algorithm described at the start of this section.
+
+The hack \textbf{breaks down in 3D}, since two objects could overlap each other, but not intersect (one is simply behind the other, but far away).
+
+\subsection{Bounding Boxes and Volumes}
+
+Detecting collisions between arbitrary meshes or polyhedra is \textbf{expensive}, especially for large, complex objects. The most common case is that there is \textit{no} intersection. Therefore, we can use a cheap tests using a simplified \textbf{bounding primitive} and if that passes, \textit{then} we do a more complex test.
+
+Examples of \textbf{bounding primitives} include:
+\begin{itemize}
+	\item \textbf{Spheres}
+	\item \textbf{Axis-Aligned Bounding Boxes}
+	\item \textbf{Cylinders} -- useful for people and trees
+	\item \textbf{Capsules} -- these are cylinders with round ends, often used to approximate people
+\end{itemize}
+
+This modifies the general $O(n^2)$ collision detecting algorithm like so:
+\begin{algorithmic}[1]
+\FOR {$o_1 \in objects$}
+	\FOR {$o_2 \in (objects \setminus \lbrace o_1 \rbrace)$}
+		\STATE \textbf{\textit{// Cheaper collision with bounding primitive}}
+		\IF {$o_1$.boundingBox().intersect($o_2$.boundingBox())}
+			\STATE \textbf{\textit{// More expensive collision test since first test passed}}
+			\IF {$o_1$.intersect($o_2$)}
+				\STATE \textit{// Collision occurred! Handled it!}
+				\STATE $o_1$.collisionResponse($o_2$)
+			\ELSE
+				\STATE \textit{// No collision occurred}
+			\ENDIF				
+		\ELSE
+			\STATE \textit{// No collision occurred}
+		\ENDIF
+	\ENDFOR
+\ENDFOR
+\end{algorithmic}
+
+An AABB is an axis-aligned bounding box. It's a box where the edges are parallel to the $x,y,z$ axes. Therefore, it cannot be rotated and have diagonal lines like rectangles can. An AABB is defined by six values – the minimum and maximum $x,y,z$ coordinates:
+\begin{equation}
+	x_{min}, x_{max}, y_{min}, y_{max}, z_{min}, z_{max}
+\end{equation}
+
+AABBs are just large enough to contain all of the object's points. These are easy to compute and render, and can be used to make other rendering techniques more efficient. To compute a bounding box for a mesh, we need to find the box's values. We do this by finding the minimum and maximum $x,y,z$ values of all the points that make up the polygon. So if, then its bounding box can be defined with the values:
+
+An \textbf{algorithm} can be devised for this, where we loop through all the points and update the bounding box's values if a new minimum/maximum has been found:
+\begin{lstlisting}[language=c]
+// Make sure to initialise the box so the loop works correctly
+// A good way of doing this is just using the first point's (X, Y)
+// coordinates for the minimum and maximum values.
+Box boundingBox(points[0].x, points[0].x, points[0].y,
+	points[0].y, points[0].z, points[0].z);
+// Loop through the rest of the points (not the first)
+for (int i = 1; (i < numPoints); ++i)
+{
+    if (points[i].x < boundingBox.xMin) boundingBox.xMin = points[i].x;
+    if (points[i].x > boundingBox.xMax) boundingBox.xMax = points[i].x;
+    if (points[i].y < boundingBox.yMin) boundingBox.yMin = points[i].y;
+    if (points[i].y > boundingBox.yMax) boundingBox.yMax = points[i].y;
+    if (points[i].z < boundingBox.zMin) boundingBox.zMin = points[i].z;
+    if (points[i].z > boundingBox.zMax) boundingBox.zMax = points[i].z;
+}
+\end{lstlisting}
+
+\subsection{Terrain Collision}
+
+\textbf{Terrain collisions} are an easy sub-problem of collision detecting. Collisions occur when something is at, or below, the terrain surface. $f(x, y) = h$ denotes the \textbf{height} of the point $(x, y)$ on the terrain. So if an object is at point $o = (o_x, o_y, o_z)$, then a \textbf{collision occurs} if $o_z \leq f(o_x, o_y)$. The height of the terrain is not continuous, but is sampled. Therefore, $f(x, y)$ must be \textbf{computed using interpolation} (e.g. nearest neighbour, barycentric, bilinear, etc.).
+
+\section{Higher Order Surfaces}
+
+DEFINITELY READ SLIDES THOUGH!
+TODO: MAYBE DO??
+
+\section{Shadows and Reflections}
+
+DEFINITELY READ SLIDES THOUGH!
+TODO: MAYBE DO??
+
+\section{Framebuffers and Effects}
+
+The \textbf{frame buffer} is a block of memory which stores the rendered image. As shown on the OpenGL pipeline, the last step is storing a fragment as a pixel in the frame buffer. As the complexity of graphics and the demand for a greater variety of effects grows, many other kinds of buffers have been created. These include:
+\begin{itemize}
+	\item \textbf{Colour Buffer (RGBA)} -- where the rendered image is stored (FRAME BUFFER)
+	\item \textbf{Depth Buffer (Z)} -- Z-values of 2D fragments, used to implement occlusion
+	\item \textbf{Front and Back Buffers} -- used for smooth animation
+	\item \textbf{Left and Right Buffers} -- stereoscopic 3D
+	\item \textbf{Stencil Buffer (old)} -- masks parts of the image out. Not used too much any more
+	\item \textbf{Accumulation Buffer} -- for building up images from \textbf{different render passes}
+	\item \textbf{Pixel Buffers} -- for drawing offscreen to textures (e.g. reflection)
+\end{itemize}
+
+\texttt{glDrawBuffer()} is used to set which buffer to draw to. \texttt{glReadBuffer()} reads the contents of the chosen buffer. This is useful for taking a rendered image and storing it an OpenGL \textbf{texture} -- this is known as the \textbf{render-to-texture} technique. It is also useful for screen captures. \texttt{glClear()} clears the buffers specified in the parameters, by setting all pixels to a single colour.
+
+The accumulation buffer \textbf{combines multiple versions} of a frame. You draw an image in the back buffer first, then call \texttt{glAccum(GL\_ACCUM, x)} to add the image currently in the back buffer to the \textbf{accumulation buffer}. \texttt{x} is a scalar value that is multiplied by every pixel value in the back buffer image, so each image can be added with different weightings. The contents of the accumlation buffer is \textbf{copied back to the back buffer} by calling \texttt{glAccum(GL\_RETURN, x)}.
+
+\subsection{Effects}
+
+\textbf{Translucency} can be achieved by using the accumulation buffer. Objects specify how much light they let through from behind with an \textbf{alpha component}. This mean when we assign a translucent pixel colour $new$ to the frame buffer, where the current colour in the scene is $old$, we can use \textbf{one minus destination alpha blending} to blend the two colours together and achieve the translucent effect:
+\begin{equation}
+	c_{image} = a c_{new} + (1 - a)c_{old}
+\end{equation}
+where $a$ is the alpha component of the $new$ pixel. The alpha component is often specified in a texture.
+
+For this to work correctly, and ensure that colours blended with the transparent pixels are \textbf{from behind}, we can't just rely on the depth buffer. We need to:
+\begin{quote}
+	Render solid objects first, translucent objects in last
+\end{quote}
+That is, we run \textbf{painter's algorithm} on the objects to ensure the translucent objects are last. If you don't, then the depth buffer gets messed up. 
+
+TODO: painter's algorithm figure here in-place
+
+\textbf{Aliasing} (see Figure \ref{fig:aliasing}) is when there aren't enough pixels to represent the smoothness/complexity of an image, which results in jagged pixels ("jaggies"). The effect is worse if the aliased object is moving, as you get "crawlies". This happens because the retina cells in the eye see \textbf{small patches}, but then \textbf{integrate} all the incoming light on that patch (i.e. average it). The aliasing effect is even worse if the pixels are larger than the area covered by these cells.
+
+In the computer, when we compute the colour of a pixel we're actually \textbf{measuring light over a patch}. However, the pixels are not integrated, they are \textbf{sample at one point}. The solution is to average multiple samples -- this is known as \textbf{anti-aliasing}. This smooths out edges and makes it look more realistic (most of the time), as shown in Figure \ref{fig:anti-aliasing}.
+
+Anti-aliasing can be achieved by:
+\begin{enumerate}
+	\item For $i \in [1,n]$ where $n$ is the number of samples per pixel
+	\begin{enumerate}
+		\item Jitter camera (move it slightly)
+		\item Render image in back buffer 
+		\item Add result from back buffer to accumulation buffer where $x$ (multiplier) is $\frac{1}{n}$
+	\end{enumerate}
+	\item Send summed/averaged result of accumulation buffer to the back buffer and swap buffers to show anti-aliased image
+\end{enumerate}
+
+TODO: figure on aliasing
+TODO: figure on anti-aliasing
+
+\textbf{Motion blur} can be achieved by rendering the scene several times and averaging in accumulation buffer, just like anti-aliasing. However, this time the scene is not the same for each render. For each rendered frame, fast-moving object is moved!
+
+\textbf{Depth of focus} refers to the fact our faces are focused at fixed $z$-distance, the  \textbf{focal distance}. Objects at the focal distance are sharp, but objects outside of this distance are \textbf{blurred}. To achieve this with the accumulation buffer, you jitter the camera slightly and render multiple times, averaging each image together. However, this time you ensure that \textbf{objects in the focal plane are not moved}. In other words, the other objects are moving/jittering. This is illustrated in Figure \ref{fig:depth-of-focus}.
+
+TODO: combined human eye and depth of focus technique figures
+
+\subsection{Depth Quantisation}
+
+There is a big limitation in the depth buffer -- it is only 16 bits. This means fragments can only ever be in one of $2^{16}$ distances. This distance is \textbf{quantised} before it reaches the clipping plane. This means \textbf{objects close to each other are rendered incorrectly}, and you usually see a mixture of pixels from each due to rounding error.
+
+With floating point numbers, there is a higher degree of error in \textbf{larger numbers}.  Therefore, one way of reducing this problem is keep the \textbf{near and far clipping plans close}, which means the depth values will be smaller and thus, more accurate. This means the chance of having two objects bleed together is reduced as there is a reduced chance of rounding error.
+
+If you want to draw a wireframe mesh over the solid mesh (e.g. wireframe sphere over planet), you draw it as a solid and then as a wireframe. However, we run into depth quantisation, causing the edges of the wireframe to \textbf{bleed} into the solid in undefined ways. There are two ways to solve this:
+\begin{itemize}
+	\item \textbf{Polygon Offset} -- offset polygons of wireframe slightly. \texttt{glPolygonOffset()} is one way of doing this
+	\item \textbf{Bigger Wireframe} -- scale the wireframe by a very small amount so it's just large enough to prevent depth quantisation (by being outside of the surface), but small enough to still look like it's wrapping over the solid
+\end{itemize}
+
+TODO: wireframe of spheres (both of them)
+
+\subsection{Multipass Rendering}
+
+\textbf{Multipass rendering} refers to the technique of performing multiple rendering passes on the same pixel to achieve some effect. For example, imagine you want to render an airplane with camouflage paint, identification letters and damage (which are textures known as \textbf{decals}). Each one of those components of the plane would render a single effect and add it to the accumulation buffer. 
+
+But why use multiple passes on the same pixel? That's very expensive. Instead, we can \textbf{chain} processes using \textbf{combiners}. A single fragment processor of the graphics card performs one operation. It is possible to then specify arbitrary operations, inputs, etc.. For example, \textbf{interpolate between two textures} is an example operation you could perform, which mathematically is defined as:
+\begin{equation}
+	RGB_{out} = \alpha RGB_{tex0} + (1- \alpha) RGB_{previous}
+\end{equation}
+
+This requires lots of code however, and every single feature was \textbf{specialised}. This meant it was painful to built the hardware and drivers, and it was also painful to program. A more generalised solution known as \textbf{shaders} was created, which are described in Section \ref{sec:programmable-pipeline}.
+
+\section{OpenGL}
+
+\subsection{Fixed Function Pipeline}
+\label{sec:opengl-pipeline}
+
+OpenGL's \textbf{fixed function pipeline} is based on the projective rendering pipeline. This pipeline is shown in Figure \ref{fig:opengl-pipeline}. There are two primary inputs:
+\begin{itemize}
+	\item \textbf{Vertex Data} -- geometric data such as vertices and triangles (plus stateful information such as lights, materials, etc.)
+	\item \textbf{Pixel Data} -- \textbf{texture} image data
+\end{itemize}
+
+After receiving these inputs, the pipeline has the following stages:
+\begin{enumerate}
+	\item \textbf{Optimisations} -- these run the geometry optimisations such as \textbf{cached display lists} and \textbf{evaluators} (used to draw curves)
+	\item \textbf{Geometry (Vertex + Geometry Shader)} -- here, per-vertex operations such as \textbf{lighting} is performed and the primitives are assembled into device coordinate space
+	\item \textbf{Texture Preparation} -- stores and manipulates texture images (in VRAM)
+	\item \textbf{Conversion to Pixels (Rasterisation)} -- rasterises assembled triangles into pixels, using the computed shading from the Geometry stage, texels from the Texture Preparation stage and Barycentric interpolation
+	\item \textbf{Pixel Operations (Fragment Shader)} -- per-fragment operations performed on the GPU. This performs any \textbf{final manipulations on the pixels} before being stored in the framebuffer
+	\item \textbf{Storage} -- Fragment is stored as a pixel in the framebuffer (if it passes the depth test and such)
+\end{enumerate}
+
+OpenGL uses three principal matrices -- the modelview, projection and texture matrices. Figure \ref{fig:opengl-six-matrices} shows where these fit in the six matrix chain of projective rendering. Here, the \textbf{modelview} matrix is used for both the model and view transformations. View transformation happens last, meaning it must be specified \textbf{first}, due to the \textbf{reverse order of matrix transformations}. 
+
+TODO: figure of opengl 6 matrices
+
+To specify which \textbf{matrix stack} is being changed, these functions are used:
+\begin{quote}
+\texttt{glMatrixMode(GL\_MODELVIEW)
+glMatrixMode(GL\_PROJECTION)
+glMatrixMode(GL\_TEXTURE)
+}
+\end{quote}
+
+OpenGL stores matrices in \textbf{column-major} order. Which means the matrix in Equation \ref{eq:column-major-matrix} is stored as:
+\begin{quote}
+	\texttt{GLfloat* M = $\lbrace$ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 $\rbrace$ }
+\end{quote}
+\begin{equation}
+	\left[ \begin{matrix}
+	1 & 5 & 9 & 13 \\
+	2 & 6 & 10 & 14 \\
+	3 & 7 & 11 & 15 \\
+	4 & 8 & 12 & 16 \\
+	\end{matrix} \right]
+\end{equation}
+
+\textbf{Manipulating Matrices}:
+\begin{itemize}
+	\item \texttt{glLoadIdentity()} -- sets matrix back to identity
+	\item \texttt{glLoadMatrix()} -- overwrite current matrix with given one
+	\item \texttt{glMultMatrix()} -- multiply current matrix with given one (applies additional transformation)
+	\item \texttt{glPushMatrix()} -- pushes current matrix onto stack (preserves it)
+	\item \texttt{glPopMatrix()} -- pops matrix off the top of the stack and \textbf{overwrites current matrix} with this popped matrix
+	\item \texttt{gluLookAt()} -- sets current matrix to a \textbf{view matrix} that specifies the viewpoint. It's just a rotation and translation, which the specified camera parameters shown in Figure \ref{fig:gluLookAt}.
+	\item \texttt{glOrtho()} -- sets current matrix to orthographic projection matrix
+	\item \texttt{glFrustum()} -- sets current matrix to perspective projection matrix
+	\item \texttt{gluPerspective()} -- sets current matrix to perspective projection matrix perspective projection with \textbf{field of view} measured in angles.
+\end{itemize}
+
+TODO: figure of gluLookat diagram with three vector inputs
+
+\texttt{glViewport()} specifies the \textbf{final viewport transformation}. Typically just \texttt{glViewport(0, 0, width, height)} where \texttt{width} and \texttt{height} is the width and height of the window in pixels.
+
+\subsection{Programmable Pipeline}
+\label{sec:programmable-pipeline}
+
+Instead of having a fixed computation at each pixel, we write \textbf{small programs} for them. Each pixel has one or more \textbf{shaders}, which are small programs than run on the GPU (written using C-style syntax). Each replace different parts of the fixed function pipeline. There are three main types of shaders:
+\begin{itemize}
+	\item \textbf{Vertex Shader} -- replaces geometry transform stage (object to clipping coordinate systems)
+	\item \textbf{Geometry Shader} -- generalises evaluators (replaces input)
+	\item \textbf{Pixel (Fragment) Shader} -- replaces pixel operation stage
+\end{itemize}
+Figure \ref{fig:programmable-pipeline} shows the OpenGL pipeline and highlights which parts of the pipeline each type of shader replaces.
+
+TODO: figure of programmable pipeline with labels on
+
+Shaders are programs, not functions. So they need storage/loading, compilation/linking and execution. They're cross-GPU programs, which means shaders are:
+\begin{enumerate}
+	\item stored on disk in text format (i.e. code)
+	\item loaded manually into RAM
+	\item compiled and linked on the CPU (\textbf{runtime compilation})
+	\item instructions sent to VRAM and stored
+	\item \textbf{invoked} from VRAM under the control of the CPU
+	\item \textbf{executed} on GPU
+\end{enumerate}
+
+\textbf{GLSL} is OpenGL's own shader language, which provides \textbf{highly parallel execution}. It works best with static data, so very similar conceptually to FORTRAN, just with C syntax. There is no dynamic memory management however. A \textbf{shader program} in GLSL is both the vertex and the pixel shader -- both have to be specified, even if you only want to use one. Input is received from the CPU to the vertex shader, which does some processing and sends its output to the pixel shader.
+
+There are different \textbf{types} of variables in shader programs, which are:
+\begin{itemize}
+	\item \textbf{Attribute} -- per-vertex values, such as position/texture coordinate/normal
+	\item \textbf{Uniform} -- global attributes across entire render call, such as transformation matrices, materials, etc. Per-surface values can be use dhere
+	\item \textbf{Varying} -- values passed from vertex to fragment shader, which are \textbf{interpolated} using Barycentric interpolation before it reaches the fragment shader. Good for normals, colours, etc.
+	\item \textbf{in/out/inout} -- used to specify function parameters can be changed (defaults to "in")
+\end{itemize}
+
+The \textbf{vertex shader} writes it output to one of the different frame buffers (e.g. \texttt{gl\_FrontColor}), which is then used directly in the fragment shader. The fragment shader writes it output to the final buffer, just before the final decision is made to keep the fragment or not. The output is typically written to the variable \texttt{gl\_FragColor}.
+
+% http://wwwimages.adobe.com/www.adobe.com/content/dam/Adobe/en/devnet/flashplayer/articles/vertex-fragment-shaders/fig01.jpg
+TODO: figure in-place showing structure on my slide??
+
+\subsection{Lighting}
+
+\textbf{Enable lighting:} \texttt{glEnable(GL\_LIGHTING)}
+
+\textbf{Enable specific light:} \texttt{glEnable(GL\_LIGHT0)}
+
+\textbf{Choose shading model:} \texttt{glShadeModel(GL\_FLAT) || glShadeModel(GL\_SMOOTH)}
+
+Flat shading means entire triangle has same lighting (colour). Smooth shading means each vertex is lit separately and colours are interpolated across.
+
+\textbf{Choose lighting model:} \texttt{glLightModel(GL\_LIGHT\_MODEL\_TWO\_SIDE, 1)}
+
+\textbf{Light properties:}
+\begin{itemize}
+	\item \texttt{glLightfv(GL\_LIGHT0, GL\_POSITION, lightPosition)} -- sets light position
+	\item \texttt{glLightfv(GL\_LIGHT0, GL\_AMBIENT, ambientColour)} -- sets ambient colour of light
+	\item \texttt{glLightfv(GL\_LIGHT0, GL\_DIFFUSE, diffuseColour)} -- sets diffuse colour of light
+	\item \texttt{glLightfv(GL\_LIGHT0, GL\_SPECULAR, specularColour)} -- sets specular reflective colour of light
+\end{itemize}
+
+\textbf{Surface/material properties:}
+\begin{itemize}
+	\item \texttt{glMaterialfv(GL\_FRONT, GL\_EMISSION, lightPosition)} -- sets colour of light surface emits
+	\item \texttt{glMaterialfv(GL\_FRONT, GL\_AMBIENT, ambientColour)} -- sets ambient colour the surface reflects
+	\item \texttt{glMaterialfv(GL\_FRONT, GL\_DIFFUSE, diffuseColour)} -- sets diffuse colour the surface reflects
+	\item \texttt{glMaterialfv(GL\_FRONT, GL\_SPECULAR, specularColour)} -- sets specular colour the surface reflects
+	\item \texttt{glLightfv(GL\_LIGHT0, GL\_SHININESS, shininess)} -- sets exponent used for specular highlight
+\end{itemize}
+
+\subsection{Texturing}
+
+To perform texturing on a surface in OpenGL we need to:
+\begin{itemize}
+	\item load a texture (image) into VRAM, which will have texture coordinates $[0,1] \times [0,1]$
+	\item define a surface one vertex at a time, specifying the \textbf{texture coordinate} $(s, t)$ of each vertex (done using \texttt{glTexCoord2f})
+	\item (optionally) apply lighting to the texture's colour 
+\end{itemize}
+
+Texture usage is enabled in OpenGL using \texttt{gLEnable(GL\_TEXTURE\_2D)}. Since textures are used repeatedly, they're \textbf{cached in VRAM}. This means we need memory management. \textbf{Texture IDs} are like pointers to textures allocated in VRAM. \texttt{glGenTextures()} generates new textures (gives you a new textures ID/pointers) and \texttt{glDeleteTextures()} de-allocates memory for existing textures (given texture IDs). To \textbf{choose} which texture to use/modify, \texttt{glBindTexture()} is used.
+
+OpenGL \textbf{interpolates} the texture coordinates of each vertex across the surface of a triangle using \textbf{Barycentric interpolation}. The interpolated $(s, t)$ coordinate is then used to look up the texel and that point is then assigned the texture colour. 
+
+As texture coordinates should only range between 0 and 1, what do you do if they exceed that range? You perform a \textbf{clamping procedure}, which can be set using \texttt{glTexParameteri(GL\_TEXTURE\_2D, GL\_WRAP\_S, clamping)} and \texttt{glTexParameteri(GL\_TEXTURE\_2D, GL\_WRAP\_T, clamping)} for the $s$ and $t$ texture coordinates. \texttt{filter} can be:
+\begin{itemize}
+	\item \texttt{GL\_CLAMP} -- clamps all values $< 0$ to $0$ and all values $> 1$ to $1$
+	\item \texttt{GL\_REPEAT} -- repeats the texture over and over again. That is, $1.5$ is the same as $0.5$.
+\end{itemize}
+
+TODO: figure of repeat clamping
+
+Texels are often interpolated to provide nicer looking results, as you usually never get exact integer $(i, j)$ values. These are specified using the \texttt{glTexParameteri(GL\_TEXTURE\_2D, GL\_MIN\_FILTER, filter)} and \texttt{glTexParameteri(GL\_TEXTURE\_2D, GL\_MAG\_FILTER, filter)} for \textbf{magnification} and \textbf{minification} respectively. \texttt{filter} can be:
+\begin{itemize}
+	\item \texttt{GL\_NEAREST} -- nearest neighbour filtering. Takes the nearest available texel, so $(2.5, 1.35435)$ maps to $(3, 1)$. This \textbf{preserves sharp edges}.
+	\item \texttt{GL\_LINEAR} -- bilinear interpolation is used to \textbf{smooth artefacts and edges}.
+\end{itemize}
+Nearest neighbour filtering is best if the texture is geometric and has sharp edges. Bilinear filtering is best if the texture is \textbf{organised} and based on real-life (e.g. grass texture).
+
+TODO: figure of nearest and linear interp for sphere
+
+\textbf{Texture modulation} can be set using \texttt{glTexEnvf()} with the specific texture.   \texttt{GL\_REPLACE} causes the texture to completely replace lighting and \texttt{GL\_MODULATE} modulates the texture colour with the lighting.
+
+\end{document}
