@@ -1748,9 +1748,96 @@ TODO: in-place figure of 2-3 billboarding!
 
 \section{Optimisation and Organisation}
 
-TODO: fill structure in after reading slides
+\textbf{Optimisation} is about speeding up the rendering, by:
+\begin{itemize}
+	\item repeating parts of rendering
+	\item remove redundant data
+	\item discard irrelevant data
+	\item exploit parallelism in hardware (i.e. GPU or SSE)
+\end{itemize}
+
+There are three major hardware components to consider for optimisation, which are:
+\begin{itemize}
+	\item \textbf{Hard Disk} -- Persistent storage, typically used to store complex geometry and textures (pre-loaded to RAM)
+	\item \textbf{RAM/CPU} -- this is what executes the graphical application's logic. Typically stores pre-loaded geometric and image data
+	\item \textbf{VRAM (on Video Card)} -- stores textures,  cached geometry and other rendering information before the rendered image is sent back to the computer 
+\end{itemize}
+Data from the hard disk is read/written by the CPU, at which point it is stored in RAM. Then, the CPU (application) can sent that data to the video card for rendering, through the \textbf{video bus}.
+
+There are several \textbf{bottlenecks} which slow the rendering down, caused by the communication between these components:
+\begin{itemize}
+	\item Loading from disk (reading from takes a long time when compared to RAM or VRAM)
+	\item Performing geometric computation on the CPU. It's fast, but it may be better to move the computation to the GPU, where it can be \textbf{parallelised} for greater speed
+	\item Transferring data from RAM to VRAM -- it takes a relatively long time to transfer data from RAM tto the video card, so we often \textbf{pre-load} textures in VRAM, at the start of the scene.
+	\item Memory usage in RAM and VRAM. How much geometry can/should we store in RAM? How much in VRAM? Ideally, you'd want more in VRAM, but the amount you can hold there is limited.
+	\item Geometric processing on the video card -- do you really need to process/render that much geometry? Is some of the data redundant?
+	\item Texture processing -- processing, filtering and applying texture images can be quite slow
+\end{itemize}
+
+We can \textbf{optimise loading} of the scene like so:
+\begin{itemize}
+	\item Load textures in program initialisation
+	\item Don't load textures \textbf{you don't use} or \textbf{reload} textures
+	\item \textbf{Pre-compute geometry} at the start of the scene., don't do it \textbf{every frame} (e.g. positions of vertices on sphere)
+	\item\textbf{Pre-compute animation data} if possible
+\end{itemize}
+
+We can \textbf{optimise geometry} by ensuring its cached in the correct places and we limit the amount of vertices/triangles in the scene:
+\begin{itemize}
+	\item Cache geometry on video card
+	\item Use \textbf{repeated} geometric elements (use same meshes/data, just translate it!)
+	\item \textbf{Reuse vertices} where possible. THis can be done through the use of line strips and loops, triangle strips and fans. \textbf{Vertex arrays} also help here.
+	\item \textbf{Substitute textures for geometry} -- this provides a way to greatly simplify complex geometry with a decent approximation, drastically reducing the number of vertices to render and triangles to rasterise (at the cost of more storage in VRAM)
+	\item \textbf{Discard un-needed geometry} through the use of geometric optimisations (see Section \ref{sec:geometric-optimisation})
+\end{itemize}
+
+A key idea behind rendering optimisation is to cache as much as possible on the video card. Between two sequential frames, the vertices are \textbf{transformed geometrically}, but the textures, colours, even the actual meshes themselves don't change. Why \textbf{resend them over the video bus}, when the majority of what changes between two different frames is the transformation matrices? We want to cache this static data in VRAM!
+
+\subsection{Rendering Methods}
+
+There are two major types of rendering modes:
+\begin{itemize}
+	\item \textbf{Immediate Mode} -- processes commands (with associated data like vertices) as a one-off and then discards the data/command (doesn't cache in VRAM)
+	\item \textbf{Retained Mode} -- splits up processing. Commands and data are \textbf{cached in VRAM}, which can be \textbf{invoked} by the CPU at any time (invocation doesn't require sending lots of data through the video bus!)
+\end{itemize}
+
+One retained of doing this is \textbf{display lists}, one of the oldest optimisation techniques in OpenGL. A display list is a \textbf{set of OpenGL calls}. This includes geometry, state changes and so on. Wheels on a train, parts of body even whole sections of the world can be stored in displayed list due to the flexibility in what can be stored with them. The biggest \textbf{limitation} in display lists however is that take a lot of memory. One triangle is roughly 300 bytes of data, so 100,000 triangles is 30 MB! This is why a lot of VRAM is desired!
+
+\subsection{Minimising Vertices}
+
+One way of minimising the number of vertices sent to the video card is to use \textbf{alternative primitive types}, rather than just the standard three vertices for every triangle. Depending on the structure of your meshes, it be possible to use some of these other types to remove memory and data transfer. Figure \ref{fig:opengl-primitives} shows the different kinds of primitives OpenGL can renderer.
+
+TODO: opengl primitives
+
+\textbf{Triangle strips} are a very good way of lowering vertex redundancy. They are easy to compute on regularly-gridded models, but computing strips on arbitrary meshes is \textbf{difficult}, as it is an \textbf{NP-hard} problem.
+
+\subsection{Vertex Arrays and Vertex Buffer Objects}
+
+Rather than calling an OpenGL function for each vertex, you can store all your vertices in a ray and \textbf{send them to the video card} in one call. This increases rendering times as it means you're only using a single function call, reducing function call overhead and video bus latency.
+
+After doing this, you  specifying the \textbf{indices} of the three required vertices in the vertex array (or four if using quads, etc.), requiring \textbf{one function call} for each specified vertex. \textit{Or} you can also send all the indices of the mesh in a \textbf{single function call} as well.
+
+You do the following steps:
+\begin{itemize}
+	\item Send vertices to the video card with \texttt{glVertexPointer()} (be sure to call \texttt{glEnableClientState(GL\_VERTEX\_ARRAY)} first)
+	\item Draw all the faces/elements specified by an \textbf{index array} that's passed to \texttt{glDrawElements(GL\_TRIANGLES, ...)}. If you're rendering triangles, the array needs to be of length $3m$, where $m$ is the number of triangles
+\end{itemize}
+
+This saves a lot of time, as function call and video bus latency is reduced. However, the geometric data is still being sent \textbf{every frame}. We can use a \textbf{Vertex Buffer Object (VBO)} to send both the vertex and index (face/element) data \textbf{once} during the pre-loading stage, and then simply \textbf{invoke a command} to render said vertices/indices every frame. This completely removes most of the function and video bus data transfer overhead as it is offloaded to the pre-loading stage.
+
+Since VBOs are structures cached on the GPU, like textures and display lists, the programmer must allocate said buffers themselves, using the following methods
+\begin{itemize}
+	\item \textbf{Allocation} -- \texttt{glGenBuffers()} and \texttt{glDeleteBuffers()}
+	\item \textbf{Binding} -- \texttt{glBindBuffer()}
+	\item \textbf{Transfer} -- \texttt{glBufferData()}
+\end{itemize}
+
+\subsection{GPU and Shaders}
+
+Faster yet, we can just use the GPU for both data and computation entirely. Nowadays, it may be possible to do \textit{everything} on the GPU. This could be achieved using geometry, vertex and pixel shaders, generalising said shaders to \textbf{GPGPU programming}. We shift the OS to the GPU, treating the \textbf{CPU an an IO device}.
 
 \section{Geometric Optimisation}
+\label{sec:geometric-optimisation}
 
 To boost rendering times, we want to make we're \textbf{not rendering what we don't have to}. If things are out of view, why render them? If the user isn't going to notice the reduce detail in a object far away, why add detail to it? In a nutshell, \textbf{geometric optimisation}:
 \begin{itemize}
