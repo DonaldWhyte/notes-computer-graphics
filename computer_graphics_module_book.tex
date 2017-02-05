@@ -133,6 +133,14 @@ Given individual triangles which represent different objects in the scene, we to
 \end{enumerate}
 Figure \ref{fig:projective-rendering} shows the process of transforming object coordinates to device coordinates, going from a local representation to a representation that can be rendered on a 2D image plane. This is all done using homogeneous transformation matrices.
 
+\begin{equation}
+	d = \left[ \begin{matrix}
+		\frac{p_x}{p_w}	\\ \frac{p_y}{p_w} \\ p_z
+	\end{matrix} \right]
+	\label{eq:ndcs}
+\end{equation}
+where $d$ is the normalised device coordinate and $p$ is the homogeneous clipping coordinate.
+
 TODO: figure of six systems and conversion (arrow from VCS to CCS)
 
 Figure \ref{fig:clipping-coordinates} shows what the clipping coordinates are. They're the (non-normalised) coordinates of an object on the image plane, with the $z$ value being the distance from the eye. The \textbf{projection matrix} essentially defines a \textbf{view frustum} (Figure \ref{fig:view-frustum}) that is used to definer what the user can and can't see. Any points \textbf{outside} of the frustum are not rendered, being clipped from the scene (hence the name for CCS).
@@ -204,8 +212,10 @@ The \textbf{field of view} if the region that is visible in the image. This alte
 
 By our assumption, let's say $d = 1$. Suppose $\theta = 45$ degrees and the \textbf{width of the output image} $n_w = 640$. Then we can compute the width of the image in the image plane $w$ \textit{and} the \textbf{width of a single pixel} $w_p$ is in the scene, like so:
 \begin{equation}
+\begin{aligned}[b]
 	w = 2 d \tan \theta = 2 \cdot 1 \tan 45 = 2 \cdot 1 \cdot 1 = 2 \\
 	w_p = \frac{w}{n_w} = \frac{2}{640} = 0.003125
+\end{aligned}
 \end{equation}
 
 The \textbf{aspect ratio} is the ratio of the image's \textbf{height to width}. For raytracing, this doesn't matter much, but we will assume square pixels. Therefore, the height of pixel is $h_p = w_p = \frac{w}{n_w}$. Therefore, as Figure \ref{eq:raytracing-pixel-location} shows, the \textbf{top left pixel} is at:
@@ -314,7 +324,7 @@ These intersection tests have to be performed for every pixel. See Section \ref{
 
 Global illumination is aware that \textbf{light must come from somewhere}. So we compute the reflection angle when a ray hits the surface and traces the light back further with another ray. This is repeated until you hit a light source. However, we need to add the contributions of \textbf{many photons}, reflected from many other objects and light sources. This means instead of just firing off a \textbf{single} reflection ray when our ray hits a surface, we fire off \textbf{many rays}.
 
-When using this model, if another rays are generated and the algorithm goes deep with the recursion, you don't need \textbf{local illumination} to achieve decent lighting in the scene. It can be purely achieved with global illumination, which is much more realistic!
+When using this model, if another rays are generated and the algorithm goes deep with the recursion, you don't need \textbf{local illumination} to achieve decent lighting in the scene. It can be purely achieved with global illumination, which is much more realistic.
 
 \textbf{Monte Carlo integration} is a technique which does just this:
 \begin{enumerate}
@@ -331,7 +341,7 @@ TODO: create rough figure on LucidChart which is based on the one on my slides o
 
 \subsection{Monte Carlo Distribution}
 
-So how do we compute the multiple rays which bounce off a single intersection? This uses \textbf{random distributions} of numbers. This means we need a way of generating random floating point numbers! Computers \textbf{pseudo-random number generators}, which aren't actually random but their distributions are similar to what people have empirically found that humans deem as random.
+So how do we compute the multiple rays which bounce off a single intersection? This uses \textbf{random distributions} of numbers. This means we need a way of generating random floating point numbers. Computers use \textbf{pseudo-random number generators}, which aren't actually random but their distributions are similar to what people have empirically found that humans deem as random.
 
 \texttt{random()} is a function which generates a number from $[0, RAND\_MAX]$. To get a random number between [0,1], we do the following: $\frac{\texttt{random()}}{\texttt{RAND\_MAX}}$. Then we are free to scale and translate the number to get the random distribution to be in the range/scale we want.
 
@@ -362,27 +372,17 @@ The pseudo-code for doing this is given below:
 \end{algorithmic}
 Theoretically, you can never guarantee that the algorithm will terminate. On average however, it takes \textbf{two iterations} to find a good direction.
 
-\subsection{Multisampling}
-
-TODO: at the pixel level
-
 \section{Geometric Structures}
 
 \subsection{Vectors}
 
-\textbf{Operations:}
-\begin{tabular}{lll}
-	TODO & & \\
-\end{tabular}
-
-\textbf{Length of a vector}: $||\vec{v}||^2 = \vec{v}$
+\textbf{Length of a vector}: $||\vec{v}||^2 = \vec{v} \cdot \vec{v}$
 
 \textbf{Angle between vectors}:
 \begin{equation}
 	\begin{aligned}[b]
 		\vec{v} \cdot \vec{w} = ||\vec{v}|| ||\vec{w}|| \cos \theta \\
 		\cos \theta = \frac{\vec{v} \cdot \vec{w}}{||\vec{v}|| ||\vec{w}||}
-	]]
 	\end{aligned}	
 \end{equation}
 
@@ -742,7 +742,6 @@ TODO: great circle rotations
 
 \subsection{Polygons and Polyhedra}
 
-TODO: make sure to mention CCW order of triangles
 A \textbf{polygon} is a 2D shape, such as a triangle, square, pentagon, hexagon and so on. A circle is also a polygon, which has an infinite number of sides.
 
 A \textbf{polyhedra} is a 3D shape of \textbf{vertices} connected with \textbf{edges}. It can be rendered as a \textbf{wireframe}, which means the edges are rendered. Alternative, polyhedra can be rendered as a \textbf{solid surface}, which means the \textbf{faces} are rendered. These faces are \textbf{broken into triangles}, whose vertices are specified in CCW order of position \textbf{from the outside}.
@@ -791,7 +790,7 @@ OpenGL uses mostly \text{reflected light}, meaning \textbf{refraction} is comple
 	\item \textbf{Colour} -- the spectral distribution (colour) of the light emitted
 \end{itemize}
 
-\textbf{Point lights} are often used because they are easy to model and render, making them simply geometrically. Distance lamps, the sun, incandescent bulbs and so on can all be \textit{approximated} using point light sources. Point light sources emit light with a \textbf{uniform intensity in all directions}. To the human viewer, it appears as it light sources such as the sun, bulbs, etc. do this. This is why approximating them with point light sources produces good results. Point light sources are specified using all four properties discussed earlier
+\textbf{Point lights} are often used because they are easy to model and render, making them simply geometrically. Distance lamps, the sun, incandescent bulbs and so on can all be \textit{approximated} using point light sources. Point light sources emit light with a \textbf{uniform intensity in all directions}. To the human viewer, it appears as it light sources such as the sun, bulbs, etc. do this. This is why approximating them with point light sources produces good results. Point light sources are specified using all four properties discussed earlier.
 
 TODO: in-place figure of point source light
 
@@ -815,7 +814,7 @@ A popular technique for modelling direct lighting is the \textbf{Phong lighting 
 \begin{itemize}
 	\item \textbf{Specular (Shiny) Reflection} -- TODO
 	\item \textbf{Diffuse (Matt) Reflection} -- TODO
-	\item \textbf{Ambient (Background) Reflection) Reflection} -- TODO
+	\item \textbf{Ambient (Background) Reflection} -- TODO
 	\item \textbf{Emitted Light} -- TODO
 \end{itemize}
 Each of these contribute to the final lighting colour, as shown in Equation \ref{eq:phong-lighting-model}.
@@ -877,7 +876,7 @@ TODO: figure showing some specular highlights in-place
 
 TODO: in-place figure diffuse lighting
 
-Diffuse light is the \textbf{light spread over the surface}, which dTODOepends on the \textbf{angle of incidence} and \textit{not} the angle of reflection. It is computed like so:
+Diffuse light is the \textbf{light spread over the surface}, which depends on the \textbf{angle of incidence} and \textit{not} the angle of reflection. It is computed like so:
 \begin{equation}
 \begin{aligned}[b]
 	I_{diffuse}(p) &= l_{diffuse} r_{diffuse} cos \theta_i \\
@@ -920,10 +919,10 @@ where $o$ is the output colour, $l$ is the colour of the light and $s$ is the co
 
 \subsubsection{Phong and Gouraud Shading Models}
 
-We have a lighting model, but how do we use the model to \textbf{shade} the objects in the scene? This involves lighhting the pixels/vertices an object's geometry, which are typically \textbf{triangles}. There are two main methods for doing this:
+We have a lighting model, but how do we use the model to \textbf{shade} the objects in the scene? This involves lighting the pixels/vertices an object's geometry, which are typically \textbf{triangles}. There are two main methods for doing this:
 \begin{itemize}
-	\item \textbf{Phong Shading Model (per-pixel shading} -- computes shading for each pixel in the image. This is more realistic as each pixel is a different shade. This is expensive however, as you have to interpolate normals and so on.
-	\item \textbf{Gouraud Shading Model  (per-vertex shading} -- computes light at each vertex, then \textbf{interpolates} the colours through the pixels of the triangle using barycentric interpolation. This is cheaper computationally and is used by OpenGL.
+	\item \textbf{Phong Shading Model (per-pixel shading)} -- computes shading for each pixel in the image. This is more realistic as each pixel is a different shade. This is expensive however, as you have to interpolate normals and so on.
+	\item \textbf{Gouraud Shading Model (per-vertex shading} -- computes light at each vertex, then \textbf{interpolates} the colours through the pixels of the triangle using barycentric interpolation. This is cheaper computationally and is used by OpenGL.
 \end{itemize}
 
 \subsubsection{Lighting Modulation}
@@ -938,7 +937,7 @@ TODO: from lecture 5 (is subsection of Local Illumination?)
 	\item a way of \textbf{triangulating} the surface (using those points to form triangles that approximate the surface)
 \end{enumerate}
 
-\textbf{Smooth surfaces} (see Figure \ref{fig:round-objects} in particular are challenging. To render these, we approximate the geomtry using triangles and use \textbf{Gouraud shading} to approximate lighting. That is, we have a \textbf{normal at each vertex} based on the surface. This means \textbf{every vertex in a triangle has the same normal}.
+\textbf{Smooth surfaces} (see Figure \ref{fig:round-objects}) in particular are challenging. To render these, we approximate the geometry using triangles and use \textbf{Gouraud shading} to approximate lighting. That is, we have a \textbf{normal at each vertex} based on the surface. This means \textbf{every vertex in a triangle has the same normal}.
 
 TODO: figure of round objects
 
@@ -946,7 +945,7 @@ TODO: figure of round objects
 
 TODO: define vertex and state how it can contain normals, colours, etc. for lighting
 
-TODO: state how most surfaces have per-vertex normals which are interpolated  (Phong shading model), although per-face normals can be used (Gouroud shading model)
+TODO: state how most surfaces have per-vertex normals which are interpolated  across service , although per-face normals can be used (Gouroud shading model)
 
 \subsection{Parametrising Cylinders}
 
@@ -1103,7 +1102,7 @@ Using $3 \times 3$ Cartesian matrices for transformations has some problems, as 
 
 TODO: 2D HC figure
 
-In 3D, homogeneous coordinates are $(x, y, z, w)$, where $w$ is still a scale factor. $(x, y, z, w)$ refers to the point $(\frac{x}{w}, \frac{y}{w},m \frac{z}{w})$. When $w = 0$, $(x,y,z)$ refers to a \textbf{vector}, because $w = 0$ implies that the line $(x, y, z, 0)$ is \textbf{infinitely far out}. When $w = 1$, $(x, y, z)$ is typically a \textbf{point}.
+In 3D, homogeneous coordinates are $(x, y, z, w)$, where $w$ is still a scale factor. $(x, y, z, w)$ refers to the point $(\frac{x}{w}, \frac{y}{w},\frac{z}{w})$. When $w = 0$, $(x,y,z)$ refers to a \textbf{vector}, because $w = 0$ implies that the line $(x, y, z, 0)$ is \textbf{infinitely far out}. When $w = 1$, $(x, y, z)$ is typically a \textbf{point}.
 
 Homogeneous transforms in 3D are now 4x4 matrices. The \textbf{identity matrix} $I$ is:
 \begin{equation}
@@ -1125,7 +1124,7 @@ p' = \left[ \begin{matrix}
 	0 & 0 & 1 \\
 	\end{matrix} \right] p
 \end{equation}
-$p$ moves in direction $v$ \textbf{proportional} to $w$ (through shearing), which line son the homogeneous line representing $p'$. In other words:
+$p$ moves in direction $v$ \textbf{proportional} to axis $w$ (through shearing), which lies on the homogeneous line representing $p'$. In other words:
 \begin{itemize}
 	\item in homogeneous coordinates, all 2D points become lines in space
 	\item the 2D translation is a shear operation in 3D
@@ -2101,6 +2100,145 @@ TODO: MAYBE DO??
 
 DEFINITELY READ SLIDES THOUGH!
 TODO: MAYBE DO??
+
+What is a shadow? It's not an object, it's the \textbf{absence of light} behind an object. It is an important visual cue for depth perception. How do we do this?
+
+For faces that are facing \textbf{away from the light} (see Figure \ref{fig:shadowed-face}, this is already handled by the Phong lighting model. These faces have normals pointing away from the light source, so $\vec{n} \cdot \vec{v}$ is negative. This means the light is \textbf{blocked by the face} and we only apply ambient and emissive light (no diffuse or specular).
+
+TODO: figure of shadowed face
+
+With \textbf{raytracing}, all we have to do to check if an object/pixel is in a shadow is:
+\begin{enumerate}
+	\item Draw a ray from the \textbf{point of intersection of an object} to the light source
+	\item If ray hits any other object, then the original object is shadowed
+\end{enumerate}
+This is just another intersection test.
+
+TODO: figure of shadow rays
+
+Shadow rays are per-pixel. We apply emissive and diffuse light, but not diffuse or specular as before. Alternatively, we can compute shadows \textbf{per-vertex}. That is, we \textbf{shade each vertex}, only applying ambient/emissive to the vfertex if it's in shadow. Then we use \textbf{Gouraud shading} to spread the shadow across the face. This is shown in Figure \ref{fig:gouraud-shading-on-faces}.
+
+TODO: gouraud-shading-on-faces
+
+To achieve \textbf{soft shadows}, you simply add more vertices and triangles. However, shadow rays are not cheap. Good shadows require subdivision of surfaces, perhaps even >20,000 triangles where you'd use a single triangle before. We must optimise this to make shadows feasible.
+
+\subsection{Circular Shadows}
+
+Many shadows are of characters, which are projected on the floor. The floor is typically a \textbf{flat plane} (or close enough), meaning all we have to do to approximate a character's shadow is \textbf{renderer a black circle on the floor}, underneath the character. It is cheap and dirty, but surprisingly effective. For extra realism, you could make the black circle a \textbf{texture with alpha transparency}, to achieve smooth edges on the shadow s(soft shadows).
+
+\subsection{Projected Shadows}
+
+A shadow is \textbf{projected} away from light. We can use this to render a \textbf{flat surface} which represents the shadow, using transformations similar to \textbf{perspective projection}.
+
+TODO: shadow project geometry figure in-place
+
+Given the position of a point light $l$ and the position of a vertex for some geometry $p$, we can find the \textbf{shadow position} $s$ corresponding to $p$ like so:
+\begin{equation}
+\begin{aligned}[b]
+	s_x = p_x l_z - p_z l_x \\
+	s_x = p_y l_z - p_z l_y \\
+	s_x = 0 \\
+	s_w = l_z - p_z \\
+	\\
+	\left[ \begin{matrix}
+	s_x \\ s_y \\ s_z \\ s_w
+	\end{matrix} \right]
+	= 
+	\left[ \begin{matrix}
+	l_z & 0 & -l_x & 0 \\
+	0 & l_z & -l_y & 0 \\
+	0 & 0 & 0 & 0 \\
+	0 & 0 & -1 & l_z
+	\end{matrix} \right]
+	\left[ \begin{matrix}
+	p_x \\ p_y \\ p_z \\ p_w
+	\end{matrix} \right]
+\end{aligned}
+\label{eq:shadow-projection-derivation}
+\end{equation}
+
+Using the transformation matrix in Equation \ref{eq:shadow-projection-derivation}, it is possible to compute the \textbf{entire shadow surface} by applying it on all the points of some geometry. This new shadow surface can then be triangulated (if necessary) and rendered.
+
+To do this in practice, you follow these steps:
+\begin{enumerate}
+	\item Render object with lighting (first pass)
+	\item Turn off lighting, set colour to black
+	\item Apply shadow matrix to \textbf{modelview matrix}
+	\item Re-render object (second pass)
+\end{enumerate}
+This means we need \textbf{two render passes}, which doubles the cost  of the render. Additionally, it only works for projecting shadows onto \textbf{single, flat plane}. If you try to do it for all surfaces (shadows on all surfaces), it is $O(n^2)$.
+
+\subsection{Shadow Volumes}
+
+Shadow volumes are \textbf{3D visibility maps}. We project each object \textit{away} from the light to generate a polyhedron that spreads out infinitely from an object in the \textbf{opposite direction of the light source} (see Figure \ref{fig:shadow-volumes}. Fragments/pixels inside these polyhedron are \textbf{in shadow}, fragments outside are \textbf{in light}. This can be achieved with the \textbf{stencil buffer}.
+
+% http://upload.wikimedia.org/wikipedia/commons/a/af/Shadow_volume_illustration.png
+TODO: figure of shadow volumes
+
+We require $n+2$ render passes with this technique, where $n$ is the number of lights. The steps are as follows:
+\begin{enumerate}
+	\item Render scene once, assuming everything in shadow (just ambient/emissive)
+	\item For each light $l_i \in l_1,l2_,...,l_n$:
+	\begin{enumerate}
+		\item Render shadow volumes of each object, based on position of current light. \textbf{Accumulate this render in stencil buffer}
+		\item This means stencil buffer has a 1 if a pixel/fragment is in shadow
+	\end{enumerate}
+	\item Now stencil buffer contains 0 if \textbf{pixel is lit}. Render final scene again using stencil buffer (only lit pixels rendered!)
+	\item \textbf{Accumulate this render} with the initial shadowed render to get the final scene
+\end{enumerate}
+
+\subsection{Shadow Map}
+
+Shadows maps are an extension of light maps (real-time). Shadows are the absence of light, which means there is \textbf{no line of sight to the light source}. Another way of thinking about it is:
+\begin{quote}
+	\textit{the light source cannot \textbf{see you}}
+\end{quote}
+
+An image shows visible objects, from t a particular viewpoint. We render from the \textbf{light's position}, and we see what the light sees. What is seen is in light and what is not seen (occluded by other objects) is in shadow. We discard the \textbf{colour} from the rendered image and just keep the \textbf{depth image}, which is the greyscale 16-bit image in the depth buffer. This gives us the \textbf{distance of the nearest object from light}.
+
+We use this rendered image in our \textbf{main render pass} to determine which objects/fragments to light and which not to. For each \textbf{fragment} in the main renderer, we:
+\begin{itemize}
+	\item \textbf{shadow} the pixel if $f_z > d_z$
+	\item \textbf{light} the pixel if $f_z \leq d_z$
+\end{itemize}
+where $f_z$ is the $z$-value of the fragment and $d_z$ is the corresponding $z$-value in the depth buffer.
+
+This requires two render passes. One where we render ambient, diffuse and emissive light on all objects and other where \textbf{specular light} is applied only to \textbf{lit fragments}. This totals to \textbf{three render passes} -- one for the depth image, one for ambient/diffuse/emissive and one for specular on lit fragments.
+
+\paragraph{\textbf{NOTE: }} We could perform the last two render passes in a \textbf{single pass} if fragment shaders are used, reducing the total render passes to \textbf{two}. This is because we can add special logic to light all fragments with diffuse/ambient/emissive and only light a fragment with specular if it passes the depth image test (which is typically stored as a texture). Without a custom fragment shader, there is not enough flexibility to do this, so two seprate render passes are needed.
+
+\subsection{Geometric Reflection}
+
+A reflection involves a shiny surface, where the \textbf{angle of incidence = angle of reflection}.
+
+\textbf{Geometric reflection} flips the $z$-coordinate (using -1 in transformation matrix) and renders it again. We see can this with Figure \ref{geometric-reflection}.
+
+TODO: geometric reflection figure
+
+This would be implemented like so:
+\begin{enumerate}
+	\item The mirror is a whole in the wall, with \textbf{nothing behind it} (no a single bit of geometry)
+	\item Render the main scene (first pass)
+	\item \textbf{Reflect the world} around $z = 0$, by scaling the vertices and normals of every object by $(1, 1, -1)$. We \textbf{don't scale the light position}. 
+	\item Render the world again, using reflected transformation (second pass)
+\end{enumerate}
+
+This provides decent results, but there are \textbf{reflection artefacts}. We get \textbf{false visibility} because there isn't actually a hole in wall. This is caused by \textbf{multiple mirrors} at once, so you're using this technique be sure not to include multiple mirrors in the scene. 
+
+We can solve this with \textbf{reflection culling} however. Objects behind the mirror are reflected anyway, so cull them based on the mirror's plane. For objects outside the mirror, we render the mirror into the stencil buffer and use that to limit reflections.
+
+\subsection{Mirrored Textures and Environment Maps}
+
+Another method we could do is  to \textbf{render from the mirrored viewpoint} (see Figure \ref{fig:mirrored-viewpoint}) off-screen, storing the rendered image in a \textbf{texture}. Then, we \textbf{apply} that texture to the mirror (this could simply be a quad, for example).
+
+TODO: mirrored viewpoint
+
+\textbf{Environment maps} are a similar technique, but use \textbf{spherical surfaces}. We store the image as seen from the \textbf{centre point of the sphere} in a texture. We parametrise the \textbf{view direction} of the camera with $(\phi, \rho)$ and store a pixel for each $(\phi, \rho)$. That is:
+\begin{itemize}
+	\item At each pixel, compute $(\phi, \rho)$ based on surface normal (of sphere)
+	\item Use $(\phi, \rho)$ to \textbf{look up in texture} and retrieve reflected texel
+\end{itemize}
+This technique is extensible to arbitrary surfaces.
 
 \section{Framebuffers and Effects}
 
