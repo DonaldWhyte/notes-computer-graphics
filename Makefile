@@ -1,4 +1,4 @@
-DOC_NAME = computer_graphics_module_book
+DOC_NAME = computer_graphics
 
 default: build
 
